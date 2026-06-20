@@ -1,0 +1,11 @@
+{
+  "name": "Nomade 253 Admin Panel",
+  "short_name": "Nomade Admin",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#F5F7FA",
+  "theme_color": "#1E88E5",
+  "description": "Panel d'administration Nomade 253",
+  "orientation": "any",
+  "prefer_related_applications": false
+}
