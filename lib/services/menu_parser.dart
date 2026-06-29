@@ -6,7 +6,22 @@ class ParsedMenu {
   final List<ParsedCategory> categories;
   final List<OptionChoice> globalSupplements;
 
-  ParsedMenu({required this.categories, required this.globalSupplements});
+  /// Noms de catégories (normalisés en minuscules) auxquelles les suppléments
+  /// doivent s'appliquer, tels que listés entre parenthèses après le titre
+  /// « Suppléments » (ex. « SUPPLÉMENTS (Hamburgers, Tacos) »).
+  final List<String> supplementCategories;
+
+  /// `true` si une liste de catégories a été précisée dans le fichier.
+  /// Permet de distinguer « aucune catégorie précisée » (→ rétro-compat :
+  /// appliquer à toutes) de « catégories explicitement listées ».
+  final bool supplementCategoriesSpecified;
+
+  ParsedMenu({
+    required this.categories,
+    required this.globalSupplements,
+    this.supplementCategories = const [],
+    this.supplementCategoriesSpecified = false,
+  });
 
   int get itemCount =>
       categories.fold(0, (sum, c) => sum + c.items.length);
@@ -28,12 +43,19 @@ class ParsedItem {
   // supplément (delta) dans le groupe « Taille ».
   final List<MapEntry<String, int>> sizes;
 
+  /// Groupes d'options déjà construits, propres à ce plat (ex. suppléments
+  /// d'un Tacos issus de l'import JSON). Le parser texte le laisse vide ;
+  /// ils sont ajoutés tels quels par [buildOptionGroups].
+  final List<OptionGroup> extraGroups;
+
   ParsedItem({
     required this.name,
     required this.basePrice,
     this.menuPrice,
     List<MapEntry<String, int>>? sizes,
-  }) : sizes = sizes ?? [];
+    List<OptionGroup>? extraGroups,
+  })  : sizes = sizes ?? [],
+        extraGroups = extraGroups ?? [];
 
   bool get hasSizes => sizes.isNotEmpty;
 
@@ -82,6 +104,7 @@ class ParsedItem {
         ],
       ));
     }
+    groups.addAll(extraGroups);
     return groups;
   }
 }
@@ -90,25 +113,34 @@ class ParsedItem {
 ///
 /// Reconnaît :
 /// - les en-têtes de catégorie (lignes en majuscules, ex. « HAMBURGERS (…) »)
-/// - les plats « Nom : 600 FDJ (menu 900 FDJ) »
+/// - les plats « Nom : 600 FDJ (menu 900 FDJ) » OU « Nom – 1800 FJ »
+///   (séparateur deux-points OU tiret/​demi-cadratin ; devise FDJ, FJ ou DJF)
 /// - une section « Suppléments » → choix d'options réutilisables
 class MenuParser {
+  // Séparateur nom/prix : « : » ou tiret « - », demi-cadratin « – », cadratin « — ».
+  // Devise : FDJ, FJ ou DJF.
   static final _itemRegex = RegExp(
-    r'^(.+?)\s*:\s*\+?\s*([\d][\d\s.]*)\s*FDJ',
+    r'^(.+?)\s*[:–—-]\s*\+?\s*([\d][\d\s.,]*)\s*(?:FDJ|FJ|DJF)\b',
     caseSensitive: false,
   );
   static final _menuPriceRegex = RegExp(
-    r'menu\s*\+?\s*([\d][\d\s.]*)\s*FDJ',
+    r'menu\s*\+?\s*([\d][\d\s.,]*)\s*(?:FDJ|FJ|DJF)\b',
     caseSensitive: false,
   );
 
   static ParsedMenu parse(String raw) {
     final categories = <ParsedCategory>[];
     final supplements = <OptionChoice>[];
+    final supplementCategories = <String>[];
+    var supplementCategoriesSpecified = false;
     ParsedCategory? current;
     var inSupplements = false;
     var firstContentSeen = false;
     String? currentSize; // suffixe de taille actif (Tacos M/L/XL)
+    // Dernière ligne « texte » sans prix : sert de nom de repli quand le plat a
+    // son nom sur une ligne et son prix sur la suivante (ex. menu Davido :
+    // « Yassa poulet ou poisson » / « (accompagnement riz blanc) – 3500 FJ »).
+    String? pendingName;
 
     for (final line in raw.split('\n')) {
       final l = line.trim();
@@ -125,7 +157,13 @@ class MenuParser {
       // 2. Ligne de plat / supplément (avec prix « … : 600 FDJ »)
       final m = _itemRegex.firstMatch(l);
       if (m != null) {
-        final name = m.group(1)!.trim();
+        var name = m.group(1)!.trim();
+        // Le « nom » n'est qu'une parenthèse de description (le vrai nom était
+        // sur la ligne précédente) → reprendre cette ligne précédente.
+        if (name.startsWith('(') && pendingName != null) {
+          name = pendingName;
+        }
+        pendingName = null;
         final price = _toInt(m.group(2)!);
         if (inSupplements) {
           supplements.add(OptionChoice(name: name, price: price));
@@ -177,20 +215,50 @@ class MenuParser {
       //    « Suppléments possibles : Emmental, Cheddar… ».
       if (_isHeader(l)) {
         currentSize = null;
+        pendingName = null;
         if (RegExp(r'^suppl[ée]ments', caseSensitive: false).hasMatch(l)) {
           inSupplements = true;
           current = null;
+          // Catégories ciblées entre parenthèses : « Suppléments (Hamburgers,
+          // Tacos) ». Sans parenthèse → suppléments globaux (rétro-compat).
+          final paren = RegExp(r'\(([^)]*)\)').firstMatch(l);
+          if (paren != null) {
+            // Tolère un préfixe « pour : » avant la liste.
+            final inside = paren.group(1)!.replaceFirst(
+                RegExp(r'^\s*pour\s*:?\s*', caseSensitive: false), '');
+            final names = inside
+                .split(RegExp(r'[,;/]'))
+                .map((s) => s.trim())
+                .where((s) => s.isNotEmpty)
+                .toList();
+            if (names.isNotEmpty) {
+              supplementCategoriesSpecified = true;
+              for (final n in names) {
+                supplementCategories.add(_cleanCategoryName(n).toLowerCase());
+              }
+            }
+          }
         } else {
           inSupplements = false;
           current = _pushCategory(categories, _cleanCategoryName(l));
         }
+      } else if (!l.startsWith('(')) {
+        // Ligne « texte » sans prix ni en-tête : nom potentiel d'un plat dont
+        // le prix figure sur la ligne suivante. (On ignore les parenthèses,
+        // qui sont des descriptions.)
+        pendingName = l;
       }
       // Sinon : ligne descriptive/note — ignorée.
     }
 
     // Retirer les catégories vides
     categories.removeWhere((c) => c.items.isEmpty);
-    return ParsedMenu(categories: categories, globalSupplements: supplements);
+    return ParsedMenu(
+      categories: categories,
+      globalSupplements: supplements,
+      supplementCategories: supplementCategories,
+      supplementCategoriesSpecified: supplementCategoriesSpecified,
+    );
   }
 
   /// Un en-tête est une ligne « titre » : une fois la parenthèse retirée,

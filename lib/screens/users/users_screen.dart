@@ -60,7 +60,19 @@ class _UsersScreenState extends State<UsersScreen> {
                 );
               }
 
-              var docs = snapshot.data!.docs;
+              var docs = snapshot.data!.docs.toList();
+
+              // Tri par date d'inscription décroissante (du plus récent au plus ancien)
+              docs.sort((a, b) {
+                final da = _parseDate(
+                    (a.data() as Map<String, dynamic>)['createdAt']);
+                final db = _parseDate(
+                    (b.data() as Map<String, dynamic>)['createdAt']);
+                if (da == null && db == null) return 0;
+                if (da == null) return 1;
+                if (db == null) return -1;
+                return db.compareTo(da);
+              });
 
               if (_searchQuery.isNotEmpty) {
                 docs = docs.where((d) {

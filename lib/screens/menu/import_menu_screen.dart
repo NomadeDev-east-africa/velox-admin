@@ -9,6 +9,7 @@ import '../../models/global_category.dart';
 import '../../models/option_group.dart';
 import '../../services/menu_management_service.dart';
 import '../../services/menu_parser.dart';
+import '../../services/menu_json_parser.dart';
 import '../../widgets/library_image_picker.dart';
 
 /// Import d'un menu complet collé en texte → aperçu éditable → création en lot.
@@ -32,8 +33,10 @@ class _ImportMenuScreenState extends State<ImportMenuScreen> {
 
   ParsedMenu? _parsed;
   final Map<String, String?> _categoryImages = {}; // nom -> imageUrl
+  // Catégories auxquelles appliquer les suppléments détectés (nom -> bool).
+  // Pré-rempli depuis le fichier ; éditable dans l'aperçu.
+  final Map<String, bool> _supplementCategories = {};
   List<GlobalCategory> _globalCats = [];
-  bool _applySupplementsToAll = true;
   bool _isImporting = false;
   String? _fileName;
 
@@ -59,7 +62,7 @@ class _ImportMenuScreenState extends State<ImportMenuScreen> {
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['txt'],
+      allowedExtensions: ['txt', 'json'],
       withData: true,
     );
     if (result == null || result.files.isEmpty) return;
@@ -82,15 +85,31 @@ class _ImportMenuScreenState extends State<ImportMenuScreen> {
         .showSnackBar(SnackBar(content: Text(msg), backgroundColor: color));
   }
 
+  // Catégories qui ne reçoivent jamais de suppléments par défaut (boissons,
+  // desserts…) — laissées décochées sauf si le fichier les cible explicitement.
+  static final _noSupplementCat = RegExp(
+    r'boisson|cocktail|dessert|glace|caf[ée]|jus|soft|\beau\b|th[ée]|infusion',
+    caseSensitive: false,
+  );
+
   void _parse() {
-    final parsed = MenuParser.parse(_textController.text);
+    // JSON standard d'abord (déterministe), sinon parser texte heuristique.
+    final raw = _textController.text;
+    final parsed = MenuJsonParser.tryParse(raw) ?? MenuParser.parse(raw);
     setState(() {
       _parsed = parsed;
       _categoryImages.clear();
+      _supplementCategories.clear();
       for (final c in parsed.categories) {
         // Image héritée automatiquement de la catégorie globale (si elle existe).
         _categoryImages[c.name] =
             _service.imageForCategoryName(c.name, _globalCats);
+        // Suppléments : si le fichier a précisé des catégories, on ne coche que
+        // celles-là ; sinon, défaut intelligent = toutes SAUF les boissons/
+        // desserts (évite « Coca + fromage »). Reste éditable via les chips.
+        _supplementCategories[c.name] = parsed.supplementCategoriesSpecified
+            ? parsed.supplementCategories.contains(c.name.toLowerCase())
+            : !_noSupplementCat.hasMatch(c.name);
       }
     });
     if (parsed.itemCount == 0) {
@@ -127,9 +146,15 @@ class _ImportMenuScreenState extends State<ImportMenuScreen> {
       final items = <MenuItem>[];
       for (final cat in parsed.categories) {
         final imageUrl = _categoryImages[cat.name];
+        final applySupplements =
+            supplementsGroup != null && (_supplementCategories[cat.name] ?? false);
         for (final pi in cat.items) {
           final groups = <OptionGroup>[...pi.buildOptionGroups()];
-          if (_applySupplementsToAll && supplementsGroup != null) {
+          // Ne pas dupliquer : si le plat porte déjà ses propres « Suppléments »
+          // (ex. Tacos via JSON), on n'ajoute pas le groupe global par-dessus.
+          final hasOwnSupplements = groups.any(
+              (g) => g.name.toLowerCase().startsWith('suppl'));
+          if (applySupplements && !hasOwnSupplements) {
             groups.add(supplementsGroup);
           }
           items.add(MenuItem(
@@ -212,10 +237,13 @@ class _ImportMenuScreenState extends State<ImportMenuScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Uploadez un fichier .txt OU collez le texte. Format reconnu : en-têtes de '
-              'catégorie en MAJUSCULES, plats « Nom : 600 FDJ (menu 900 FDJ) », tailles, '
-              'section « Suppléments ». L\'image de chaque catégorie est reprise '
-              'automatiquement depuis la page Catégories. L\'aperçu reste modifiable.',
+              'Deux formats acceptés : un fichier/​texte JSON (recommandé — fiable pour '
+              'tout menu, généré par une IA) OU du texte libre. Pour le texte : en-têtes '
+              'de catégorie en MAJUSCULES, plats « Nom : 600 FDJ (menu 900 FDJ) », tailles, '
+              'section « Suppléments » (limitez-les à certaines catégories entre '
+              'parenthèses : « Suppléments (Hamburgers, Tacos) »). Les boissons et desserts '
+              'sont exclus des suppléments par défaut. L\'image de chaque catégorie est '
+              'reprise automatiquement depuis la page Catégories. L\'aperçu reste modifiable.',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
             const SizedBox(height: defaultPadding),
@@ -224,7 +252,7 @@ class _ImportMenuScreenState extends State<ImportMenuScreen> {
                 ElevatedButton.icon(
                   onPressed: _pickFile,
                   icon: const Icon(Icons.upload_file),
-                  label: const Text('Choisir un fichier .txt'),
+                  label: const Text('Choisir un fichier (.json ou .txt)'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primaryColor,
                     foregroundColor: Colors.white,
@@ -306,12 +334,31 @@ class _ImportMenuScreenState extends State<ImportMenuScreen> {
                 '${parsed.globalSupplements.map((s) => '${s.name} +${s.price}').join(', ')}',
                 style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
               ),
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                value: _applySupplementsToAll,
-                onChanged: (v) =>
-                    setState(() => _applySupplementsToAll = v ?? false),
-                title: const Text('Appliquer ces suppléments à tous les plats'),
+              const SizedBox(height: 8),
+              const Text(
+                'Appliquer ces suppléments aux catégories :',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final c in parsed.categories)
+                    FilterChip(
+                      label: Text(c.name),
+                      selected: _supplementCategories[c.name] ?? false,
+                      onSelected: (v) => setState(
+                          () => _supplementCategories[c.name] = v),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Astuce : précisez les catégories dans le fichier — '
+                '« Suppléments (Hamburgers, Tacos) » — pour exclure '
+                'automatiquement les boissons.',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
               ),
             ],
             const Divider(height: largePadding),
@@ -397,6 +444,8 @@ class _ImportMenuScreenState extends State<ImportMenuScreen> {
                       cat.name = v;
                       final img = _categoryImages.remove(old);
                       _categoryImages[v] = img;
+                      final sup = _supplementCategories.remove(old);
+                      setState(() => _supplementCategories[v] = sup ?? false);
                     },
                   ),
                 ),

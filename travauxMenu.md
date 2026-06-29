@@ -227,6 +227,103 @@ de ligne cliquable et l'icône détails était hors écran. Corrigé :
 et les méthodes per-restaurant du service (`streamCategories`, `ensureCategory`…)
 ne sont plus utilisés. À nettoyer plus tard si souhaité.
 
+## ✅ FAIT 2026-06-25 (app admin) — Suppléments ciblés par catégorie à l'import — compile (`flutter analyze` OK)
+
+**Problème** : à l'import d'un menu complet, la case « Appliquer à tous » collait les
+suppléments (fromage, viande…) sur **chaque** plat, y compris les boissons (Coca se
+voyait proposer Emmental/Œuf côté client). Décision validée : **cibler par catégorie**.
+
+**Syntaxe fichier texte** : préciser les catégories entre parenthèses après le titre
+de la section, ex. `SUPPLÉMENTS (Hamburgers, Tacos)`. Sans parenthèse → comportement
+historique (appliqué à toutes les catégories, rétro-compat). Préfixe « pour : » toléré.
+
+### Fichiers modifiés
+- `lib/services/menu_parser.dart` — `ParsedMenu` étendu : `supplementCategories`
+  (List<String> en minuscules, nettoyées via `_cleanCategoryName`) +
+  `supplementCategoriesSpecified` (bool). Le parser extrait la parenthèse de la ligne
+  « Suppléments », découpe sur `, ; /`.
+- `lib/screens/menu/import_menu_screen.dart` — remplace le booléen `_applySupplementsToAll`
+  par `Map<String,bool> _supplementCategories` (nom catégorie → appliquer). Pré-coché
+  depuis le fichier (si spécifié) sinon toutes les catégories. Aperçu : `FilterChip` par
+  catégorie (éditable). Import : suppléments ajoutés uniquement aux catégories cochées.
+  Renommer une catégorie déplace aussi sa sélection de suppléments. Aide format mise à jour.
+
+## ✅ FAIT 2026-06-25 (suite) — Parser : support du format « Davido » — compile (`flutter analyze` OK)
+
+**Problème** : import du menu `MENU DAVIDO.txt` → « Aucun plat détecté ». Le parser
+n'acceptait QUE le format STR'EAT : séparateur deux-points `:` **et** devise `FDJ`.
+Davido utilise un tiret/demi-cadratin `–` **et** la devise `FJ` → 0 correspondance.
+
+### Fichier modifié — `lib/services/menu_parser.dart`
+- `_itemRegex` / `_menuPriceRegex` : séparateur élargi `[:–—-]` (deux-points OU
+  tiret/demi-cadratin/cadratin) ; devise `(?:FDJ|FJ|DJF)` ; nombres tolèrent virgule.
+- **Nom sur ligne séparée du prix** (cas Davido « Plats Africains » :
+  `Yassa poulet ou poisson` puis `(accompagnement riz blanc) – 3500 FJ`) : ajout d'un
+  `pendingName` — quand le nom détecté commence par `(`, on reprend la dernière ligne
+  texte précédente comme vrai nom. `pendingName` réinitialisé sur en-tête et après
+  chaque plat.
+
+### Validation (script jetable `dart run`, supprimé après)
+- Davido : **16 catégories, 81 plats** (avant : 0). Noms « Plats Africains » corrects.
+- STR'EAT (non-régression) : **5 catégories, 28 plats**, formules « menu », tailles
+  Tacos M/L/XL et suppléments toujours OK.
+
+## ✅ FAIT 2026-06-25 (suite) — Import JSON (voie fiable « tous menus ») — compile (`flutter analyze` OK)
+
+**Décision** : un parser texte heuristique ne couvrira jamais tous les formats de
+menus. Voie principale fiable = **import d'un JSON normalisé** (produit par une IA :
+DeepSeek/Claude). L'IA absorbe le chaos (texte, photo…) → schéma fixe → import
+déterministe. Parser texte conservé comme dépannage. Fichiers d'exemple :
+`C:\Users\PC\Desktop\FINAL 253 NOMADE\Resto app\MENU\deepseek_json_*.json`.
+
+### Schéma JSON supporté
+```json
+{
+  "categories": ["Burgers", "Tacos", "Boissons"],
+  "menu": {
+    "Burgers": [ { "nom": "Cheeseburger", "prix_seul": 800, "prix_menu": 1100 } ],
+    "Boissons": [ { "nom": "Coca", "prix": 250 } ],
+    "Tacos":   [ { "taille": "M", "base": 1100,
+                   "supplements": { "Kebab": 400 }, "extra": 100 } ],
+    "supplements": [ { "nom": "Cheddar", "prix": 100 } ]
+  }
+}
+```
+- Plats `nom/prix_seul/prix_menu` → Formule single si `prix_menu`.
+- Boissons `nom/prix` simples.
+- Tailles `taille/base` (Tacos) → fusionnées en 1 plat + groupe « Taille » ; `supplements`
+  (map) + `extra` → groupe « Suppléments » **propre au plat**.
+- `menu.supplements` (array) → suppléments globaux.
+- Métadonnées restaurant (nom/email/tél/adresse/status) **ignorées** (import dans un
+  resto déjà existant).
+
+### Fichiers
+- `lib/services/menu_json_parser.dart` — NOUVEAU : `MenuJsonParser.tryParse(raw)`
+  → `ParsedMenu?` (null si pas du JSON exploitable). Réutilise le modèle `ParsedMenu`
+  → aperçu/images/chips inchangés.
+- `lib/services/menu_parser.dart` — `ParsedItem` étendu : `extraGroups` (groupes
+  d'options pré-construits, ajoutés par `buildOptionGroups`).
+- `lib/screens/menu/import_menu_screen.dart` :
+  - `_parse()` tente `MenuJsonParser.tryParse` d'abord, sinon `MenuParser.parse`.
+  - File picker accepte `.json` + `.txt`.
+  - **Défaut intelligent suppléments** : quand le fichier ne cible pas de catégories,
+    on coche toutes SAUF boissons/desserts/cocktails/glaces/cafés/jus/eau (regex
+    `_noSupplementCat`). Règle aussi le « Coca + fromage » pour les menus non ciblés.
+  - Anti-doublon : pas de groupe « Suppléments » global ajouté à un plat qui a déjà le
+    sien (ex. Tacos).
+
+### Validation (script jetable, supprimé)
+4 fichiers DeepSeek parsés OK : catégories/plats/formules ; Tacos fusionnés (Taille +
+Suppléments propres) ; Boissons/Desserts sans supplément.
+
+### Documentation & gabarit (2026-06-26)
+- `FORMAT_MENU.md` (racine du projet) — NOUVEAU : format canonique JSON + règles,
+  format texte de dépannage, et **le prompt IA** réutilisable (DeepSeek/Claude) pour
+  générer le JSON depuis n'importe quel menu.
+- `.../Resto app/MENU/MENU DAVIDO.json` — NOUVEAU : conversion fidèle du menu Davido
+  au schéma JSON (16 catégories, 90 plats ; Sandwichs avec formule Menu +500 ;
+  `supplements: []`). Sert de gabarit de référence. Validé : import OK.
+
 ## ⚠️ À VÉRIFIER côté Firebase (pas encore fait)
 0. **NOUVEAU** : règles Firestore pour la collection racine **`menuCategories`**
    (lecture publique client + écriture admin) et règles Storage pour le préfixe
