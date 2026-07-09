@@ -4,8 +4,10 @@ import '../../constants.dart';
 import '../../models/restaurant.dart';
 import '../../models/opening_hours.dart';
 import '../../services/restaurant_service.dart';
+import '../../services/app_logger.dart';
 import '../../widgets/opening_hours_editor.dart';
 import '../menu/menu_management_screen.dart';
+import 'edit_restaurant_screen.dart';
 
 class RestaurantDetailsScreen extends StatefulWidget {
   final Restaurant restaurant;
@@ -39,14 +41,8 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.edit),
-            onPressed: () {
-              // TODO: Naviguer vers écran d'édition
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Fonction édition à venir'),
-                ),
-              );
-            },
+            tooltip: 'Modifier le restaurant',
+            onPressed: _navigateToEdit,
           ),
           IconButton(
             icon: const Icon(Icons.delete),
@@ -666,6 +662,23 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
           ),
         );
       }
+    }
+  }
+
+  Future<void> _navigateToEdit() async {
+    AppLogger.i('Navigation vers édition restaurant ${_restaurant.id}',
+        tag: 'RESTO_DETAILS');
+    final updated = await Navigator.push<Restaurant>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditRestaurantScreen(restaurant: _restaurant),
+      ),
+    );
+
+    if (updated != null && mounted) {
+      setState(() => _restaurant = updated);
+      AppLogger.i('Détails restaurant rafraîchis après édition',
+          tag: 'RESTO_DETAILS');
     }
   }
 

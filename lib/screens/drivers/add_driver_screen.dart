@@ -334,7 +334,7 @@ class _AddDriverScreenState extends State<AddDriverScreen> {
                                   controller: _emailController,
                                   label: 'Email *',
                                   icon: Icons.email,
-                                  hint: 'chauffeur@nomade253.dj',
+                                  hint: 'chauffeur@velox.dj',
                                   keyboardType: TextInputType.emailAddress,
                                   validator: (value) {
                                     if (value == null || value.isEmpty) {

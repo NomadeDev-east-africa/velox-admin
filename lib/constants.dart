@@ -1,19 +1,37 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-// COULEURS PANEL ADMIN (Professionnel Bleu/Blanc)
-const Color primaryColor = Color(0xFF1E88E5); // Bleu professionnel
-const Color secondaryColor = Color(0xFF263238); // Gris foncé
-const Color accentColor = Color(0xFF00ACC1); // Bleu cyan
-const Color backgroundColor = Color(0xFFF5F7FA); // Gris très clair
-const Color cardColor = Color(0xFFFFFFFF);
-const Color sidebarColor = Color(0xFF263238);
-const Color textDarkColor = Color(0xFF2D3142);
-const Color textLightColor = Color(0xFF9E9E9E);
+// ============================================================
+// VELOX ADMIN — Identité visuelle : VERT FLUO + NOIR (thème sombre)
+// ============================================================
+
+// Verts de marque (repris du logo Velox)
+const Color veloxGreen = Color(0xFFA6E22E);       // vert fluo principal
+const Color veloxGreenBright = Color(0xFFC6FF3D); // variante lumineuse (glow/hover)
+const Color veloxGreenDeep = Color(0xFF6FA80C);   // vert profond (pressed)
+
+// Noirs / surfaces sombres
+const Color veloxBlack = Color(0xFF000000);       // noir pur (sidebar)
+const Color veloxNearBlack = Color(0xFF0A0A0A);   // fond principal
+const Color veloxSurface = Color(0xFF161616);     // cartes
+const Color veloxSurfaceAlt = Color(0xFF1E1E1E);  // surfaces élevées / champs
+
+// Tokens sémantiques (noms conservés pour compatibilité avec tout le code)
+const Color primaryColor = veloxGreen;            // accent principal = vert fluo
+const Color secondaryColor = veloxSurfaceAlt;     // gris très foncé
+const Color accentColor = veloxGreenBright;       // accent lumineux
+const Color backgroundColor = veloxNearBlack;     // fond quasi noir
+const Color cardColor = veloxSurface;             // surface de carte
+const Color sidebarColor = veloxBlack;            // noir pur
+const Color textDarkColor = Color(0xFFF5F5F5);    // texte principal (clair sur fond sombre)
+const Color textLightColor = Color(0xFF9AA0A6);   // texte secondaire
 const Color successColor = Color(0xFF4CAF50);
 const Color warningColor = Color(0xFFFFC107);
-const Color errorColor = Color(0xFFF44336);
-const Color infoColor = Color(0xFF2196F3);
+const Color errorColor = Color(0xFFFF5252);
+const Color infoColor = veloxGreen;
+
+// Chemin du logo (déclaré dans pubspec.yaml)
+const String veloxLogoAsset = 'logo/logo_velox.png';
 
 // PADDING
 const double defaultPadding = 16.0;
@@ -145,9 +163,9 @@ class Urls {
   static const String openStreetMap = 'https://www.openstreetmap.org';
   static const String openStreetMapTile = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
   static const String openStreetMapCopyright = 'OpenStreetMap contributors';
-  static const String privacyPolicy = 'https://nomade253.com/privacy';
-  static const String termsOfService = 'https://nomade253.com/terms';
-  static const String supportEmail = 'support@nomade253.com';
+  static const String privacyPolicy = 'https://velox.dj/privacy';
+  static const String termsOfService = 'https://velox.dj/terms';
+  static const String supportEmail = 'support@velox.dj';
 }
 
 // ICONS

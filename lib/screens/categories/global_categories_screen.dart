@@ -86,6 +86,18 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
           ),
           const SizedBox(width: 12),
           OutlinedButton.icon(
+            onPressed: _busy ? null : _applyImagesToDishes,
+            icon: _busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.sync),
+            label: const Text('Appliquer les images aux plats'),
+          ),
+          const SizedBox(width: 12),
+          OutlinedButton.icon(
             onPressed: _busy ? null : _seedFromMenuItems,
             icon: _busy
                 ? const SizedBox(
@@ -99,6 +111,57 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
         ],
       ),
     );
+  }
+
+  /// Réapplique les images des catégories aux plats correspondants.
+  /// Corrige le cas où l'image d'une catégorie est ajoutée/modifiée après
+  /// l'import : les plats gardaient sinon une image vide (invisible côté client).
+  Future<void> _applyImagesToDishes() async {
+    final mode = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Appliquer les images aux plats'),
+        content: const Text(
+          'Associe l\'image de chaque catégorie à ses plats.\n\n'
+          '• « Plats sans image » : ne touche que les plats qui n\'ont pas '
+          'encore d\'image (sûr).\n'
+          '• « Toutes les images » : écrase aussi les plats qui ont déjà une '
+          'image (à utiliser si vous venez de changer l\'image d\'une catégorie).',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Plats sans image'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Toutes les images'),
+          ),
+        ],
+      ),
+    );
+    if (mode == null) return;
+
+    setState(() => _busy = true);
+    try {
+      final count = await _service.applyCategoryImagesToMenuItems(
+        overwriteExisting: mode,
+      );
+      _snack(
+        count == 0
+            ? 'Aucun plat à mettre à jour.'
+            : '$count plat(s) mis à jour avec l\'image de leur catégorie.',
+        successColor,
+      );
+    } catch (e) {
+      _snack('Erreur: $e', errorColor);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Widget _categoryCard(GlobalCategory cat) {

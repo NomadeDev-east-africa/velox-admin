@@ -19,45 +19,56 @@ class Sidebar extends StatelessWidget {
       color: sidebarColor,
       child: Column(
         children: [
-          // Header
+          // Header — logo Velox
           Container(
-            padding: const EdgeInsets.all(largePadding),
+            padding: const EdgeInsets.fromLTRB(
+                largePadding, largePadding, largePadding, defaultPadding),
             child: Column(
               children: [
                 Container(
-                  width: 60,
-                  height: 60,
+                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: primaryColor,
-                    shape: BoxShape.circle,
+                    color: veloxBlack,
+                    borderRadius: BorderRadius.circular(defaultRadius),
+                    border: Border.all(color: primaryColor.withValues(alpha: 0.4)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: primaryColor.withValues(alpha: 0.25),
+                        blurRadius: 24,
+                        spreadRadius: 1,
+                      ),
+                    ],
                   ),
-                  child: const Icon(
-                    Icons.local_taxi,
-                    size: 30,
-                    color: Colors.white,
+                  child: Image.asset(
+                    veloxLogoAsset,
+                    width: 92,
+                    height: 92,
+                    fit: BoxFit.contain,
                   ),
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'Nomade 253',
+                  'VELOX',
                   style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 3,
+                    color: primaryColor,
                   ),
                 ),
                 const Text(
                   'Admin Panel',
                   style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.white70,
+                    fontSize: 11,
+                    letterSpacing: 1.5,
+                    color: Colors.white54,
                   ),
                 ),
               ],
             ),
           ),
 
-          const Divider(color: Colors.white24, height: 1),
+          const Divider(color: Colors.white12, height: 1),
 
           const SizedBox(height: 16),
 
@@ -176,22 +187,43 @@ class Sidebar extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
-        color: isSelected ? primaryColor : Colors.transparent,
+        color: isSelected
+            ? primaryColor.withValues(alpha: 0.15)
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(defaultRadius),
       ),
-      child: ListTile(
-        leading: Icon(
-          icon,
-          color: isSelected ? Colors.white : Colors.white70,
-        ),
-        title: Text(
-          title,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.white70,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+      child: Stack(
+        children: [
+          // Barre d'accent (overlay, ne rogne pas le contenu)
+          if (isSelected)
+            Positioned(
+              left: 0,
+              top: 10,
+              bottom: 10,
+              child: Container(
+                width: 3,
+                decoration: BoxDecoration(
+                  color: primaryColor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+          ListTile(
+            leading: Icon(
+              icon,
+              color: isSelected ? primaryColor : Colors.white60,
+            ),
+            title: Text(
+              title,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: isSelected ? primaryColor : Colors.white70,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
+              ),
+            ),
+            onTap: () => onPageChanged(page),
           ),
-        ),
-        onTap: () => onPageChanged(page),
+        ],
       ),
     );
   }

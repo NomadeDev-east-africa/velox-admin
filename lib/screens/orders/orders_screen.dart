@@ -70,7 +70,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         // Header
         Container(
           padding: const EdgeInsets.all(defaultPadding),
-          color: Colors.white,
+          color: cardColor,
           child: Column(
             children: [
               TextField(
@@ -247,7 +247,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(defaultPadding),
       child: Card(
-        child: DataTable(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
           columns: const [
             DataColumn(label: Text('Statut')),
             DataColumn(label: Text('Restaurant')),
@@ -295,6 +297,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
               ),
             ]);
           }).toList(),
+          ),
         ),
       ),
     );

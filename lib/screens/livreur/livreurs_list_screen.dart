@@ -21,7 +21,7 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
         // Header avec recherche et bouton ajouter
         Container(
           padding: const EdgeInsets.all(defaultPadding),
-          color: Colors.white,
+          color: cardColor,
           child: Row(
             children: [
               // Barre de recherche
@@ -73,7 +73,16 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
                 );
               }
 
-              var livreurs = snapshot.data!.docs;
+              var livreurs = snapshot.data!.docs.toList();
+
+              // Trier par note décroissante (les mieux notés en haut)
+              livreurs.sort((a, b) {
+                final ra = ((a.data() as Map<String, dynamic>)['rating'] ?? 5.0)
+                    as num;
+                final rb = ((b.data() as Map<String, dynamic>)['rating'] ?? 5.0)
+                    as num;
+                return rb.compareTo(ra);
+              });
 
               // Filtrer par recherche
               if (_searchQuery.isNotEmpty) {
@@ -239,7 +248,9 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(defaultPadding),
       child: Card(
-        child: DataTable(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
           columns: const [
             DataColumn(label: Text('Statut')),
             DataColumn(label: Text('Photo')),
@@ -366,6 +377,7 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
               ),
             ]);
           }).toList(),
+          ),
         ),
       ),
     );

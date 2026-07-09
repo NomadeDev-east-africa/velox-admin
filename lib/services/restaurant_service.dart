@@ -145,11 +145,15 @@ class RestaurantService {
   }
 
   /// Filtrer restaurants par statut
+  ///
+  /// Le filtre `where` et le tri se font sans `orderBy` côté Firestore afin
+  /// d'éviter d'avoir à créer un index composite. Le tri par date décroissante
+  /// est appliqué côté client.
   Stream<List<Restaurant>> getRestaurantsByStatus({
     bool? isActive,
     bool? isOpen,
   }) {
-    Query query = _restaurantsCollection.orderBy('createdAt', descending: true);
+    Query query = _restaurantsCollection;
 
     if (isActive != null) {
       query = query.where('isActive', isEqualTo: isActive);    // ✅ camelCase
@@ -158,8 +162,13 @@ class RestaurantService {
       query = query.where('isOpen', isEqualTo: isOpen);        // ✅ camelCase
     }
 
-    return query.snapshots().map((snapshot) =>
-        snapshot.docs.map((doc) => Restaurant.fromFirestore(doc)).toList());
+    return query.snapshots().map((snapshot) {
+      final list =
+          snapshot.docs.map((doc) => Restaurant.fromFirestore(doc)).toList();
+      // Tri décroissant par date de création (du plus récent au plus ancien)
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return list;
+    });
   }
 
   /// Rechercher restaurants par nom
@@ -186,14 +195,24 @@ class RestaurantService {
   }
 
   /// Récupérer les menu items d'un restaurant
+  ///
+  /// Le tri (catégorie puis nom) est fait côté client pour éviter un index
+  /// composite Firestore (`restaurantId` + `category` + `name`).
   Stream<List<MenuItem>> getMenuItems(String restaurantId) {
     return _menuItemsCollection
         .where('restaurantId', isEqualTo: restaurantId)
-        .orderBy('category')
-        .orderBy('name')
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => MenuItem.fromFirestore(doc)).toList());
+        .map((snapshot) {
+      final list =
+          snapshot.docs.map((doc) => MenuItem.fromFirestore(doc)).toList();
+      list.sort((a, b) {
+        final byCategory =
+            a.category.toLowerCase().compareTo(b.category.toLowerCase());
+        if (byCategory != 0) return byCategory;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+      return list;
+    });
   }
 
   /// Mettre à jour un menu item

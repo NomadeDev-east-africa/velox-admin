@@ -34,7 +34,7 @@ class _UsersScreenState extends State<UsersScreen> {
         // Header
         Container(
           padding: const EdgeInsets.all(defaultPadding),
-          color: Colors.white,
+          color: cardColor,
           child: TextField(
             decoration: InputDecoration(
               hintText: 'Rechercher un utilisateur...',
@@ -166,7 +166,9 @@ class _UsersScreenState extends State<UsersScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(defaultPadding),
       child: Card(
-        child: DataTable(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
           columns: const [
             DataColumn(label: Text('Photo')),
             DataColumn(label: Text('Nom')),
@@ -213,6 +215,7 @@ class _UsersScreenState extends State<UsersScreen> {
               ),
             ]);
           }).toList(),
+          ),
         ),
       ),
     );

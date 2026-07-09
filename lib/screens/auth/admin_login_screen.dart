@@ -145,14 +145,14 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
 
     return Scaffold(
       body: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              primaryColor.withValues(alpha: 0.9),
-              Colors.deepPurple.shade700,
-              Colors.black.withValues(alpha: 0.9),
+              Color(0xFF0A0F00), // noir teinté vert
+              veloxBlack,
+              Color(0xFF0A0F00),
             ],
           ),
         ),
@@ -177,49 +177,49 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // Header
+                        // Header — logo Velox
                         Column(
                           children: [
                             Container(
-                              padding: const EdgeInsets.all(20),
+                              padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    primaryColor,
-                                    Colors.deepPurple.shade600,
-                                  ],
-                                ),
-                                shape: BoxShape.circle,
+                                color: veloxBlack,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                    color: primaryColor.withValues(alpha: 0.5)),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: primaryColor.withValues(alpha: 0.4),
-                                    blurRadius: 20,
+                                    color: primaryColor.withValues(alpha: 0.35),
+                                    blurRadius: 30,
                                     spreadRadius: 2,
                                   ),
                                 ],
                               ),
-                              child: const Icon(
-                                Icons.admin_panel_settings,
-                                size: 64,
-                                color: Colors.white,
+                              child: Image.asset(
+                                veloxLogoAsset,
+                                width: 120,
+                                height: 120,
+                                fit: BoxFit.contain,
                               ),
                             ),
                             const SizedBox(height: 24),
-                            Text(
-                              'ADMIN NOMADE 253',
+                            const Text(
+                              'VELOX ADMIN',
                               style: TextStyle(
                                 fontSize: 28,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.deepPurple.shade800,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 2,
+                                color: primaryColor,
                               ),
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 8),
-                            Text(
+                            const Text(
                               'Portail Administrateur',
                               style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey.shade600,
+                                fontSize: 15,
+                                letterSpacing: 0.5,
+                                color: textLightColor,
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -234,19 +234,21 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                             padding: const EdgeInsets.all(16),
                             margin: const EdgeInsets.only(bottom: 20),
                             decoration: BoxDecoration(
-                              color: Colors.red.shade50,
+                              color: errorColor.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.red.shade300),
+                              border: Border.all(
+                                  color: errorColor.withValues(alpha: 0.5)),
                             ),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Icon(Icons.error_outline, color: Colors.red),
+                                const Icon(Icons.error_outline, color: errorColor),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
                                     _errorMessage!,
-                                    style: const TextStyle(fontSize: 14),
+                                    style: const TextStyle(
+                                        fontSize: 14, color: textDarkColor),
                                   ),
                                 ),
                               ],
@@ -316,6 +318,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                             onPressed: _isLoading ? null : _login,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: primaryColor,
+                              foregroundColor: veloxBlack,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
                               ),
@@ -326,7 +329,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                                     width: 24,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
-                                      color: Colors.white,
+                                      color: veloxBlack,
                                     ),
                                   )
                                 : const Text(
@@ -342,11 +345,11 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                         const SizedBox(height: 30),
 
                         // Footer
-                        const Divider(),
+                        const Divider(color: Colors.white12),
                         const SizedBox(height: 16),
                         const Text(
-                          '© 2025 Nomade 253 - Djibouti',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                          '© 2026 Velox Admin',
+                          style: TextStyle(fontSize: 12, color: textLightColor),
                           textAlign: TextAlign.center,
                         ),
                       ],

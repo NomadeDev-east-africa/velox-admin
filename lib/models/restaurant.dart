@@ -11,6 +11,11 @@ class Restaurant {
   final String? description;
   final bool isOpen;
   final bool isActive;
+
+  /// Fermeture **exceptionnelle** décidée manuellement (rupture, imprévu…).
+  /// Prioritaire sur les horaires : si `true`, le restaurant est considéré
+  /// fermé même si l'horaire du moment dit ouvert.
+  final bool exceptionallyClosed;
   final double rating;
   final int totalOrders;
   final double totalRevenue;
@@ -30,6 +35,7 @@ class Restaurant {
     this.description,
     required this.isOpen,
     required this.isActive,
+    this.exceptionallyClosed = false,
     this.rating = 0.0,
     this.totalOrders = 0,
     this.totalRevenue = 0.0,
@@ -53,6 +59,7 @@ class Restaurant {
       description: data['description'],
       isOpen: data['isOpen'] ?? true,
       isActive: data['isActive'] ?? true,
+      exceptionallyClosed: data['exceptionallyClosed'] ?? false,
       rating: (data['rating'] ?? 0.0).toDouble(),
       totalOrders: data['totalOrders'] ?? 0,
       totalRevenue: (data['totalRevenue'] ?? 0.0).toDouble(),
@@ -79,6 +86,7 @@ class Restaurant {
       'description': description,
       'isOpen': isOpen,
       'isActive': isActive,
+      'exceptionallyClosed': exceptionallyClosed,
       'rating': rating,
       'totalOrders': totalOrders,
       'totalRevenue': totalRevenue,
@@ -101,6 +109,7 @@ class Restaurant {
     String? description,
     bool? isOpen,
     bool? isActive,
+    bool? exceptionallyClosed,
     double? rating,
     int? totalOrders,
     double? totalRevenue,
@@ -120,6 +129,7 @@ class Restaurant {
       description: description ?? this.description,
       isOpen: isOpen ?? this.isOpen,
       isActive: isActive ?? this.isActive,
+      exceptionallyClosed: exceptionallyClosed ?? this.exceptionallyClosed,
       rating: rating ?? this.rating,
       totalOrders: totalOrders ?? this.totalOrders,
       totalRevenue: totalRevenue ?? this.totalRevenue,
@@ -160,4 +170,17 @@ class Restaurant {
   /// toggle manuel [isOpen]). Renvoie `null` si aucun horaire n'est défini.
   bool? get isOpenNowBySchedule =>
       hasOpeningHours ? openingHours.isOpenNow : null;
+
+  /// Statut d'ouverture **effectif** — c'est CE getter qui doit décider si le
+  /// restaurant accepte des commandes :
+  ///  1. inactif → fermé ;
+  ///  2. fermeture exceptionnelle → fermé (override manuel) ;
+  ///  3. horaires définis → suit l'horaire du moment ;
+  ///  4. pas d'horaires → repli sur le toggle manuel [isOpen].
+  bool get isOpenNowEffective {
+    if (!isActive) return false;
+    if (exceptionallyClosed) return false;
+    if (hasOpeningHours) return openingHours.isOpenNow;
+    return isOpen;
+  }
 }

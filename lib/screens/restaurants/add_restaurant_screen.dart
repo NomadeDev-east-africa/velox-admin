@@ -332,7 +332,7 @@ class _AddRestaurantScreenState extends State<AddRestaurantScreen> {
                         keyboardType: TextInputType.emailAddress,
                         decoration: const InputDecoration(
                           labelText: 'Email *',
-                          hintText: 'restaurant@nomade253.dj',
+                          hintText: 'restaurant@velox.dj',
                           prefixIcon: Icon(Icons.email),
                         ),
                         validator: (value) {

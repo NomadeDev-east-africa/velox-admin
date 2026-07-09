@@ -21,7 +21,7 @@ class _DriversListScreenState extends State<DriversListScreen> {
         // Header avec recherche et bouton ajouter
         Container(
           padding: const EdgeInsets.all(defaultPadding),
-          color: Colors.white,
+          color: cardColor,
           child: Row(
             children: [
               // Barre de recherche
@@ -167,7 +167,9 @@ class _DriversListScreenState extends State<DriversListScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(defaultPadding),
       child: Card(
-        child: DataTable(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
           columns: const [
             DataColumn(label: Text('Statut')),
             DataColumn(label: Text('Nom')),
@@ -227,6 +229,7 @@ class _DriversListScreenState extends State<DriversListScreen> {
               ),
             ]);
           }).toList(),
+          ),
         ),
       ),
     );

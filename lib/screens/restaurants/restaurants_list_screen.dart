@@ -82,7 +82,7 @@ class _RestaurantsListScreenState extends State<RestaurantsListScreen> {
   Widget _buildHeader() {
     return Container(
       padding: const EdgeInsets.all(largePadding),
-      color: Colors.white,
+      color: cardColor,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

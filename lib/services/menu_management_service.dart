@@ -30,10 +30,9 @@ class MenuManagementService {
     return _globalCategories.snapshots().map((snap) {
       final list =
           snap.docs.map((d) => GlobalCategory.fromFirestore(d)).toList();
-      list.sort((a, b) {
-        final byOrder = a.order.compareTo(b.order);
-        return byOrder != 0 ? byOrder : a.name.compareTo(b.name);
-      });
+      // Tri alphabétique (insensible à la casse)
+      list.sort((a, b) =>
+          a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       return list;
     });
   }
@@ -120,6 +119,66 @@ class MenuManagementService {
       }
     }
     return created;
+  }
+
+  /// Réapplique l'image de chaque catégorie globale aux plats (`menuItems`)
+  /// dont la catégorie correspond (comparaison **insensible à la casse et aux
+  /// espaces**).
+  ///
+  /// Contexte : chaque plat stocke une **copie figée** de l'image de sa
+  /// catégorie (faite à l'import). Si l'image d'une catégorie est ajoutée ou
+  /// modifiée **après** l'import, les plats existants gardent leur ancienne
+  /// valeur (souvent `null`) et l'app client n'affiche donc rien. Cette méthode
+  /// resynchronise ces images.
+  ///
+  /// - [overwriteExisting] = false (défaut) : ne remplit que les plats **sans
+  ///   image** — opération sûre.
+  /// - [overwriteExisting] = true : écrase aussi les plats qui ont déjà une
+  ///   image (utile après avoir changé l'image d'une catégorie).
+  ///
+  /// Retourne le nombre de plats mis à jour.
+  Future<int> applyCategoryImagesToMenuItems({
+    bool overwriteExisting = false,
+  }) async {
+    // 1. Index nom (normalisé) -> imageUrl, pour les catégories qui ont une image.
+    final categories = await getGlobalCategories();
+    final imageByName = <String, String>{};
+    for (final c in categories) {
+      if (c.hasImage) {
+        imageByName[c.name.trim().toLowerCase()] = c.imageUrl!;
+      }
+    }
+    if (imageByName.isEmpty) return 0;
+
+    // 2. Parcourir tous les plats et corriger ceux qui doivent l'être.
+    final snap = await _menuItems.get();
+    var updated = 0;
+    var batch = _firestore.batch();
+    var ops = 0;
+    for (final doc in snap.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final key = (data['category'] ?? '').toString().trim().toLowerCase();
+      final target = imageByName[key];
+      if (target == null) continue; // pas d'image pour cette catégorie
+
+      final current = (data['imageUrl'] ?? '').toString();
+      if (current == target) continue; // déjà à jour
+      if (!overwriteExisting && current.isNotEmpty) continue; // on préserve
+
+      batch.update(doc.reference, {
+        'imageUrl': target,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      ops++;
+      updated++;
+      if (ops >= 450) {
+        await batch.commit();
+        batch = _firestore.batch();
+        ops = 0;
+      }
+    }
+    if (ops > 0) await batch.commit();
+    return updated;
   }
 
   /// Agrège les noms de catégories déjà utilisés dans `menuItems` et crée les

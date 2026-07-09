@@ -1,11 +1,11 @@
 {
-  "name": "Nomade 253 Admin Panel",
-  "short_name": "Nomade Admin",
+  "name": "Velox Admin",
+  "short_name": "Velox",
   "start_url": ".",
   "display": "standalone",
-  "background_color": "#F5F7FA",
-  "theme_color": "#1E88E5",
-  "description": "Panel d'administration Nomade 253",
+  "background_color": "#0A0A0A",
+  "theme_color": "#A6E22E",
+  "description": "Velox Admin — Panel d'administration",
   "orientation": "any",
   "prefer_related_applications": false
 }

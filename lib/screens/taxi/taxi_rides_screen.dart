@@ -70,7 +70,7 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
         // Header
         Container(
           padding: const EdgeInsets.all(defaultPadding),
-          color: Colors.white,
+          color: cardColor,
           child: Column(
             children: [
               TextField(
@@ -241,7 +241,9 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(defaultPadding),
       child: Card(
-        child: DataTable(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
           columns: const [
             DataColumn(label: Text('Statut')),
             DataColumn(label: Text('Passager')),
@@ -304,6 +306,7 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
               ),
             ]);
           }).toList(),
+          ),
         ),
       ),
     );

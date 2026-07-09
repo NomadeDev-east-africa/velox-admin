@@ -196,7 +196,7 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
   Widget _buildHeader(int total, int late, int critical) {
     return Container(
       padding: const EdgeInsets.all(defaultPadding),
-      color: Colors.white,
+      color: cardColor,
       child: Row(
         children: [
           _statChip('En cours', total, infoColor, Icons.delivery_dining),
@@ -266,7 +266,9 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(defaultPadding),
       child: Card(
-        child: DataTable(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
           columns: const [
             DataColumn(label: Text('Retard')),
             DataColumn(label: Text('Livreur')),
@@ -301,6 +303,7 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
               )),
             ]);
           }).toList(),
+          ),
         ),
       ),
     );

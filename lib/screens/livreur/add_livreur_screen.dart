@@ -389,7 +389,7 @@ class _AddLivreurScreenState extends State<AddLivreurScreen> {
                                   controller: _emailController,
                                   label: 'Email (optionnel)',
                                   icon: Icons.email,
-                                  hint: 'livreur@nomade253.dj',
+                                  hint: 'livreur@velox.dj',
                                   keyboardType: TextInputType.emailAddress,
                                   validator: (value) {
                                     if (value != null && value.isNotEmpty) {

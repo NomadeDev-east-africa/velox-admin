@@ -206,7 +206,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'stats':
         return 'Statistiques';
       default:
-        return 'Nomade 253 Admin';
+        return 'Velox Admin';
     }
   }
 }
