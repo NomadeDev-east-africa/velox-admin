@@ -991,12 +991,15 @@ class _AddDriverScreenState extends State<AddDriverScreen> {
                 Container(
                   padding: EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
+                    color: veloxSurfaceAlt,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: SelectableText(
                     e.toString(),
-                    style: TextStyle(fontFamily: 'monospace', fontSize: 12),
+                    style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                        color: textDarkColor),
                   ),
                 ),
                 SizedBox(height: 15),
