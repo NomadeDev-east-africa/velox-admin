@@ -436,7 +436,7 @@ class _AddDriverScreenState extends State<AddDriverScreen> {
                               labelText: 'Type de véhicule *',
                               prefixIcon: const Icon(Icons.category),
                               filled: true,
-                              fillColor: Colors.grey.shade50,
+                              fillColor: veloxSurfaceAlt,
                             ),
                             items: const [
                               DropdownMenuItem(
@@ -786,7 +786,7 @@ class _AddDriverScreenState extends State<AddDriverScreen> {
         prefixIcon: Icon(icon),
         suffixIcon: suffixIcon,
         filled: true,
-        fillColor: Colors.grey.shade50,
+        fillColor: veloxSurfaceAlt,
       ),
       validator: validator,
       onChanged: onChanged,

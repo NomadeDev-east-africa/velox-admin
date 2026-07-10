@@ -361,12 +361,15 @@ class _RestaurantsListScreenState extends State<RestaurantsListScreen> {
     if (!restaurant.isActive) {
       color = errorColor;
       label = 'Inactif';
-    } else if (!restaurant.isOpen) {
+    } else if (restaurant.exceptionallyClosed) {
+      color = Colors.orange;
+      label = 'Fermé (except.)';
+    } else if (restaurant.isOpenNowEffective) {
+      color = successColor;
+      label = 'Ouvert';
+    } else {
       color = Colors.orange;
       label = 'Fermé';
-    } else {
-      color = successColor;
-      label = 'Actif';
     }
 
     return Container(

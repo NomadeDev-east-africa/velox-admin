@@ -135,12 +135,27 @@ class RestaurantService {
     }
   }
 
-  /// Ouvrir/Fermer un restaurant
+  /// Ouvrir/Fermer un restaurant (toggle manuel — utilisé en repli quand
+  /// aucun horaire n'est défini).
   Future<void> toggleOpen(String id, bool isOpen) async {
     try {
       await updateRestaurant(id, {'isOpen': isOpen});      // ✅ camelCase
     } catch (e) {
       throw Exception('Erreur toggle ouverture: $e');
+    }
+  }
+
+  /// Activer/annuler une **fermeture exceptionnelle**.
+  ///
+  /// Override prioritaire sur les horaires : si `true`, le restaurant est
+  /// fermé maintenant même si l'horaire du moment dit ouvert (rupture,
+  /// imprévu…). C'est ce champ que l'app client doit combiner avec les
+  /// horaires : `ouvert = isOpenNow(horaires) && !exceptionallyClosed`.
+  Future<void> setExceptionalClosure(String id, bool closed) async {
+    try {
+      await updateRestaurant(id, {'exceptionallyClosed': closed});
+    } catch (e) {
+      throw Exception('Erreur fermeture exceptionnelle: $e');
     }
   }
 

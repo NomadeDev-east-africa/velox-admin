@@ -512,20 +512,24 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
                   ),
                 ),
 
-                // Toggle Ouvert/Fermé
+                // Fermeture exceptionnelle (override prioritaire sur les horaires)
                 ElevatedButton.icon(
-                  onPressed: _restaurant.isActive ? _toggleOpen : null,
+                  onPressed:
+                      _restaurant.isActive ? _toggleExceptionalClosure : null,
                   icon: Icon(
-                    _restaurant.isOpen ? Icons.store : Icons.store_mall_directory,
+                    _restaurant.exceptionallyClosed
+                        ? Icons.lock_open
+                        : Icons.block,
                   ),
                   label: Text(
-                    _restaurant.isOpen
-                        ? 'Fermer le restaurant'
-                        : 'Ouvrir le restaurant',
+                    _restaurant.exceptionallyClosed
+                        ? 'Annuler la fermeture exceptionnelle'
+                        : 'Fermeture exceptionnelle',
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                        _restaurant.isOpen ? Colors.orange : Colors.green,
+                    backgroundColor: _restaurant.exceptionallyClosed
+                        ? successColor
+                        : Colors.orange,
                     foregroundColor: Colors.white,
                   ),
                 ),
@@ -561,12 +565,15 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
     if (!_restaurant.isActive) {
       color = errorColor;
       label = 'Inactif';
-    } else if (!_restaurant.isOpen) {
+    } else if (_restaurant.exceptionallyClosed) {
+      color = Colors.orange;
+      label = 'Fermé (exceptionnel)';
+    } else if (_restaurant.isOpenNowEffective) {
+      color = successColor;
+      label = 'Ouvert';
+    } else {
       color = Colors.orange;
       label = 'Fermé';
-    } else {
-      color = successColor;
-      label = 'Actif et Ouvert';
     }
 
     return Container(
@@ -626,17 +633,15 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
     }
   }
 
-  Future<void> _toggleOpen() async {
+  Future<void> _toggleExceptionalClosure() async {
     setState(() => _isLoading = true);
 
     try {
-      await _restaurantService.toggleOpen(
-        _restaurant.id,
-        !_restaurant.isOpen,
-      );
+      final newValue = !_restaurant.exceptionallyClosed;
+      await _restaurantService.setExceptionalClosure(_restaurant.id, newValue);
 
       setState(() {
-        _restaurant = _restaurant.copyWith(isOpen: !_restaurant.isOpen);
+        _restaurant = _restaurant.copyWith(exceptionallyClosed: newValue);
         _isLoading = false;
       });
 
@@ -644,9 +649,9 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              _restaurant.isOpen
-                  ? 'Restaurant ouvert'
-                  : 'Restaurant fermé',
+              newValue
+                  ? 'Fermeture exceptionnelle activée'
+                  : 'Fermeture exceptionnelle annulée',
             ),
             backgroundColor: successColor,
           ),

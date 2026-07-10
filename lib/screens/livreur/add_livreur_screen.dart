@@ -646,7 +646,7 @@ class _AddLivreurScreenState extends State<AddLivreurScreen> {
         prefixIcon: Icon(icon),
         suffixIcon: suffixIcon,
         filled: true,
-        fillColor: Colors.grey.shade50,
+        fillColor: veloxSurfaceAlt,
       ),
       validator: validator,
       onChanged: onChanged,
