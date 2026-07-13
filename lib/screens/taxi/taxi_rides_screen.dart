@@ -244,15 +244,16 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
+          columnSpacing: 24,
           columns: const [
             DataColumn(label: Text('Statut')),
+            DataColumn(label: Text('Date')),
             DataColumn(label: Text('Passager')),
             DataColumn(label: Text('Téléphone')),
             DataColumn(label: Text('Type véhicule')),
             DataColumn(label: Text('Tarif estimé')),
             DataColumn(label: Text('Tarif final')),
             DataColumn(label: Text('Chauffeur')),
-            DataColumn(label: Text('Date')),
             DataColumn(label: Text('Actions')),
           ],
           rows: docs.map((doc) {
@@ -287,6 +288,7 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
                   ],
                 ),
               ),
+              DataCell(Text(requestedAt)),
               DataCell(Text(data['userName'] ?? 'N/A')),
               DataCell(Text(data['userPhone'] ?? 'N/A')),
               DataCell(Text(data['vehicleType'] ?? 'N/A')),
@@ -296,7 +298,6 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
               DataCell(Text(
                   data['finalFare'] != null ? '${data['finalFare']} FDJ' : '-')),
               DataCell(Text(data['driverName'] ?? '-')),
-              DataCell(Text(requestedAt)),
               DataCell(
                 IconButton(
                   icon: const Icon(Icons.visibility, size: 20),

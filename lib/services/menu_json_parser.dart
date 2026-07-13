@@ -76,14 +76,17 @@ class MenuJsonParser {
     final categories = <ParsedCategory>[];
     for (final catName in orderedNames) {
       if (catName.toLowerCase() == 'supplements') continue;
-      final rawItems = menu[catName];
+      final rawItems = menu[catName]; // clé JSON d'origine (pour le lookup)
       if (rawItems is! List) continue;
 
-      final cat = ParsedCategory(name: catName);
+      // Nom affiché standardisé (« Nos Glace » → « Glaces ») ; la clé d'origine
+      // reste utilisée pour retrouver les plats dans `menu`.
+      final displayName = MenuParser.standardizeCategoryName(catName);
+      final cat = ParsedCategory(name: displayName);
       for (final item in rawItems) {
         if (item is! Map) continue;
         if (item.containsKey('taille') || item.containsKey('base')) {
-          _addSizedItem(cat, catName, item); // ex. Tacos M/L/XL
+          _addSizedItem(cat, displayName, item); // ex. Tacos M/L/XL
         } else {
           final name = (item['nom'] ?? item['name'])?.toString().trim();
           if (name == null || name.isEmpty) continue;
@@ -150,13 +153,20 @@ class MenuJsonParser {
     cat.items.add(item);
   }
 
+  // Tous les prix passent par ici → +10 % arrondi à la centaine (règle
+  // partagée avec le parser texte via [MenuParser.markupPrice]).
   static int _toInt(dynamic v) {
-    if (v is int) return v;
-    if (v is num) return v.round();
-    if (v is String) {
-      return int.tryParse(v.replaceAll(RegExp(r'[^\d]'), '')) ?? 0;
+    int raw;
+    if (v is int) {
+      raw = v;
+    } else if (v is num) {
+      raw = v.round();
+    } else if (v is String) {
+      raw = int.tryParse(v.replaceAll(RegExp(r'[^\d]'), '')) ?? 0;
+    } else {
+      raw = 0;
     }
-    return 0;
+    return MenuParser.markupPrice(raw);
   }
 
   static int? _toIntOrNull(dynamic v) {

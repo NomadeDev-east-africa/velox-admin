@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../constants.dart';
 import 'add_driver_screen.dart';
+import 'edit_driver_screen.dart';
 
 class DriversListScreen extends StatefulWidget {
   const DriversListScreen({super.key});
@@ -151,7 +152,9 @@ class _DriversListScreenState extends State<DriversListScreen> {
                 ),
               ],
               onSelected: (value) {
-                if (value == 'delete') {
+                if (value == 'edit') {
+                  _navigateToEditDriver(drivers[index].id, data);
+                } else if (value == 'delete') {
                   _confirmDelete(drivers[index].id, data['name']);
                 }
               },
@@ -170,7 +173,9 @@ class _DriversListScreenState extends State<DriversListScreen> {
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
+          columnSpacing: 24,
           columns: const [
+            DataColumn(label: Text('Actions')),
             DataColumn(label: Text('Statut')),
             DataColumn(label: Text('Nom')),
             DataColumn(label: Text('Téléphone')),
@@ -178,7 +183,6 @@ class _DriversListScreenState extends State<DriversListScreen> {
             DataColumn(label: Text('Véhicule')),
             DataColumn(label: Text('Courses')),
             DataColumn(label: Text('Note')),
-            DataColumn(label: Text('Actions')),
           ],
           rows: drivers.map((doc) {
             final data = doc.data() as Map<String, dynamic>;
@@ -187,6 +191,24 @@ class _DriversListScreenState extends State<DriversListScreen> {
             final isOnline = data['isOnline'] ?? false;
             
             return DataRow(cells: [
+              // Actions (en 1re colonne pour être toujours visibles)
+              DataCell(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit, size: 20, color: primaryColor),
+                      onPressed: () => _navigateToEditDriver(doc.id, data),
+                      tooltip: 'Modifier',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete, size: 20, color: errorColor),
+                      onPressed: () => _confirmDelete(doc.id, data['name']),
+                      tooltip: 'Supprimer',
+                    ),
+                  ],
+                ),
+              ),
               DataCell(
                 Container(
                   width: 12,
@@ -211,22 +233,6 @@ class _DriversListScreenState extends State<DriversListScreen> {
                   ],
                 ),
               ),
-              DataCell(
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.edit, size: 20),
-                      onPressed: () {
-                        // TODO: Implémenter modification
-                      },
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete, size: 20, color: errorColor),
-                      onPressed: () => _confirmDelete(doc.id, data['name']),
-                    ),
-                  ],
-                ),
-              ),
             ]);
           }).toList(),
           ),
@@ -247,6 +253,26 @@ class _DriversListScreenState extends State<DriversListScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Chauffeur ajouté avec succès'),
+            backgroundColor: successColor,
+          ),
+        );
+      }
+    });
+  }
+
+  // Navigation vers modification chauffeur
+  void _navigateToEditDriver(String driverId, Map<String, dynamic> data) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            EditDriverScreen(driverId: driverId, data: data),
+      ),
+    ).then((success) {
+      if (success == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Chauffeur modifié avec succès'),
             backgroundColor: successColor,
           ),
         );

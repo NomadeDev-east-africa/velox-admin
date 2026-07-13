@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../constants.dart';
 import 'add_livreur_screen.dart';
+import 'edit_livreur_screen.dart';
 
 class LivreursListScreen extends StatefulWidget {
   const LivreursListScreen({super.key});
@@ -232,7 +233,9 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
                 ),
               ],
               onSelected: (value) {
-                if (value == 'delete') {
+                if (value == 'edit') {
+                  _navigateToEditLivreur(livreurs[index].id, data);
+                } else if (value == 'delete') {
                   _confirmDelete(livreurs[index].id, data['name']);
                 }
               },
@@ -251,7 +254,9 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
+          columnSpacing: 24,
           columns: const [
+            DataColumn(label: Text('Actions')),
             DataColumn(label: Text('Statut')),
             DataColumn(label: Text('Photo')),
             DataColumn(label: Text('Nom')),
@@ -259,7 +264,6 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
             DataColumn(label: Text('Plaque Moto')),
             DataColumn(label: Text('Livraisons')),
             DataColumn(label: Text('Note')),
-            DataColumn(label: Text('Actions')),
           ],
           rows: livreurs.map((doc) {
             final data = doc.data() as Map<String, dynamic>;
@@ -269,6 +273,24 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
                 data['isAvailable'] ?? data['is_available'] ?? false;
 
             return DataRow(cells: [
+              // Actions (en 1re colonne pour être toujours visibles)
+              DataCell(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit, size: 20, color: primaryColor),
+                      onPressed: () => _navigateToEditLivreur(doc.id, data),
+                      tooltip: 'Modifier',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete, size: 20, color: errorColor),
+                      onPressed: () => _confirmDelete(doc.id, data['name']),
+                      tooltip: 'Supprimer',
+                    ),
+                  ],
+                ),
+              ),
               // Statut
               DataCell(
                 Row(
@@ -350,31 +372,6 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
                   ],
                 ),
               ),
-              // Actions
-              DataCell(
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.edit, size: 20),
-                      onPressed: () {
-                        // TODO: Implémenter modification
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Modification à venir'),
-                          ),
-                        );
-                      },
-                      tooltip: 'Modifier',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete,
-                          size: 20, color: errorColor),
-                      onPressed: () => _confirmDelete(doc.id, data['name']),
-                      tooltip: 'Supprimer',
-                    ),
-                  ],
-                ),
-              ),
             ]);
           }).toList(),
           ),
@@ -395,6 +392,26 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Livreur ajouté avec succès'),
+            backgroundColor: successColor,
+          ),
+        );
+      }
+    });
+  }
+
+  // Navigation vers modification livreur
+  void _navigateToEditLivreur(String livreurId, Map<String, dynamic> data) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            EditLivreurScreen(livreurId: livreurId, data: data),
+      ),
+    ).then((success) {
+      if (success == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Livreur modifié avec succès'),
             backgroundColor: successColor,
           ),
         );

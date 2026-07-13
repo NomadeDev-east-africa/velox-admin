@@ -37,6 +37,11 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
     _emit();
   }
 
+  void _addFreeGroup(String name) {
+    setState(() => _drafts.add(_GroupDraft.free(name)));
+    _emit();
+  }
+
   void _removeGroup(int i) {
     setState(() => _drafts.removeAt(i));
     _emit();
@@ -47,17 +52,29 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        const Text(
+          'Options (formules, tailles, suppléments…)',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
           children: [
-            const Text(
-              'Options (formules, tailles, suppléments…)',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const Spacer(),
             TextButton.icon(
               onPressed: _addGroup,
               icon: const Icon(Icons.add, size: 18),
               label: const Text('Groupe'),
+            ),
+            TextButton.icon(
+              onPressed: () => _addFreeGroup('Sauces'),
+              icon: const Icon(Icons.local_dining, size: 18),
+              label: const Text('Sauces (gratuit)'),
+            ),
+            TextButton.icon(
+              onPressed: () => _addFreeGroup('Légumes'),
+              icon: const Icon(Icons.eco, size: 18),
+              label: const Text('Légumes (gratuit)'),
             ),
           ],
         ),
@@ -65,7 +82,8 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Text(
-              'Aucune option. Ex : « Formule » (Seul/Menu), « Suppléments » (Emmental +100)…',
+              'Aucune option. Ex : « Formule » (Seul/Menu), « Suppléments » '
+              '(Emmental +100), « Sauces »/« Légumes » gratuits au choix…',
               style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
             ),
           ),
@@ -78,7 +96,10 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
   Widget _buildGroupCard(int index, _GroupDraft draft) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      color: Colors.grey.shade50,
+      // Fond sombre (thème) : un fond clair rendait le texte clair illisible.
+      // veloxSurface est plus foncé que le fond des champs (veloxSurfaceAlt),
+      // les champs ressortent donc bien.
+      color: veloxSurface,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -124,16 +145,44 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
                 ),
               ],
             ),
-            Row(
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 16,
               children: [
-                Checkbox(
-                  value: draft.required,
-                  onChanged: (v) {
-                    setState(() => draft.required = v ?? false);
-                    _emit();
-                  },
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Checkbox(
+                      value: draft.required,
+                      onChanged: (v) {
+                        setState(() => draft.required = v ?? false);
+                        _emit();
+                      },
+                    ),
+                    const Text('Obligatoire'),
+                  ],
                 ),
-                const Text('Obligatoire'),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Checkbox(
+                      value: draft.free,
+                      onChanged: (v) {
+                        setState(() {
+                          draft.free = v ?? false;
+                          // Gratuit : on remet tous les suppléments à 0.
+                          if (draft.free) {
+                            for (final c in draft.choices) {
+                              c.price = 0;
+                            }
+                          }
+                        });
+                        _emit();
+                      },
+                    ),
+                    const Text('Gratuit (sans supplément)'),
+                  ],
+                ),
               ],
             ),
             const Divider(),
@@ -146,8 +195,8 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
                       flex: 3,
                       child: TextFormField(
                         initialValue: draft.choices[j].name,
-                        decoration: const InputDecoration(
-                          labelText: 'Choix',
+                        decoration: InputDecoration(
+                          labelText: draft.free ? 'Choix (gratuit)' : 'Choix',
                           isDense: true,
                         ),
                         onChanged: (v) {
@@ -156,25 +205,28 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
                         },
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 2,
-                      child: TextFormField(
-                        initialValue: draft.choices[j].price == 0
-                            ? ''
-                            : draft.choices[j].price.toString(),
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Supplément',
-                          suffixText: 'FDJ',
-                          isDense: true,
+                    // Champ prix masqué pour les groupes gratuits.
+                    if (!draft.free) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: TextFormField(
+                          initialValue: draft.choices[j].price == 0
+                              ? ''
+                              : draft.choices[j].price.toString(),
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'Supplément',
+                            suffixText: 'FDJ',
+                            isDense: true,
+                          ),
+                          onChanged: (v) {
+                            draft.choices[j].price = int.tryParse(v) ?? 0;
+                            _emit();
+                          },
                         ),
-                        onChanged: (v) {
-                          draft.choices[j].price = int.tryParse(v) ?? 0;
-                          _emit();
-                        },
                       ),
-                    ),
+                    ],
                     IconButton(
                       icon: const Icon(Icons.close, size: 18),
                       onPressed: () {
@@ -207,6 +259,7 @@ class _GroupDraft {
   String name;
   OptionType type;
   bool required;
+  bool free; // choix gratuits (sans supplément) : masque le champ prix
   List<_ChoiceDraft> choices;
 
   _GroupDraft({
@@ -214,6 +267,7 @@ class _GroupDraft {
     required this.type,
     required this.required,
     required this.choices,
+    this.free = false,
   });
 
   factory _GroupDraft.empty() => _GroupDraft(
@@ -223,10 +277,22 @@ class _GroupDraft {
         choices: [],
       );
 
+  /// Groupe pré-configuré « gratuit » (sauces, légumes…) : multiple, non requis,
+  /// choix sans supplément.
+  factory _GroupDraft.free(String name) => _GroupDraft(
+        name: name,
+        type: OptionType.multiple,
+        required: false,
+        free: true,
+        choices: [],
+      );
+
   factory _GroupDraft.fromGroup(OptionGroup g) => _GroupDraft(
         name: g.name,
         type: g.type,
         required: g.required,
+        // Un groupe dont tous les choix sont à 0 est considéré « gratuit ».
+        free: g.choices.isNotEmpty && g.choices.every((c) => c.price == 0),
         choices:
             g.choices.map((c) => _ChoiceDraft(c.name, c.price)).toList(),
       );

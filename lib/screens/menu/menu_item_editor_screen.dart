@@ -413,6 +413,21 @@ class _MenuItemEditorScreenState extends State<MenuItemEditorScreen> {
         ),
       );
     }
+    // Dédupliquer par nom : des catégories globales homonymes (ex. deux
+    // « Tacos ») créeraient plusieurs DropdownMenuItem de même valeur, ce qui
+    // fait planter DropdownButton (« exactly one item with value »).
+    final names = <String>[];
+    for (final c in widget.categories) {
+      if (!names.contains(c.name)) names.add(c.name);
+    }
+    // La catégorie actuelle du plat peut ne plus exister dans le catalogue
+    // (renommée/supprimée) : on l'ajoute pour qu'elle corresponde à une valeur.
+    if (_category != null &&
+        _category!.isNotEmpty &&
+        !names.contains(_category)) {
+      names.add(_category!);
+    }
+
     return DropdownButtonFormField<String>(
       initialValue: _category,
       isExpanded: true,
@@ -420,13 +435,17 @@ class _MenuItemEditorScreenState extends State<MenuItemEditorScreen> {
         labelText: 'Catégorie *',
         prefixIcon: Icon(Icons.category),
       ),
-      items: widget.categories
-          .map((c) => DropdownMenuItem(value: c.name, child: Text(c.name)))
+      items: names
+          .map((name) => DropdownMenuItem(value: name, child: Text(name)))
           .toList(),
       onChanged: (v) {
         if (v == null) return;
-        final cat = widget.categories.firstWhere((c) => c.name == v);
-        _applyCategory(cat);
+        final matches = widget.categories.where((c) => c.name == v);
+        if (matches.isNotEmpty) {
+          _applyCategory(matches.first);
+        } else {
+          setState(() => _category = v);
+        }
       },
       validator: (v) => v == null ? 'Choisissez une catégorie' : null,
     );

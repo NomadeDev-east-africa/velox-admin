@@ -181,6 +181,37 @@ class MenuManagementService {
     return updated;
   }
 
+  /// Fusionne les catégories globales en **double** (même nom, insensible à la
+  /// casse et aux espaces, ex. deux « Tacos ») : conserve une seule entrée par
+  /// nom — de préférence celle qui a une image — et supprime les autres.
+  ///
+  /// Les plats ne sont pas affectés (ils référencent la catégorie par son nom,
+  /// identique pour tous les doublons). Retourne le nombre d'entrées supprimées.
+  Future<int> mergeDuplicateGlobalCategories() async {
+    final cats = await getGlobalCategories();
+    final byKey = <String, List<GlobalCategory>>{};
+    for (final c in cats) {
+      byKey.putIfAbsent(c.name.trim().toLowerCase(), () => []).add(c);
+    }
+    var removed = 0;
+    for (final group in byKey.values) {
+      if (group.length < 2) continue;
+      // Conserver en priorité l'entrée qui possède une image, puis le plus
+      // petit `order` ; supprimer les autres.
+      group.sort((a, b) {
+        final ai = a.hasImage ? 0 : 1;
+        final bi = b.hasImage ? 0 : 1;
+        if (ai != bi) return ai - bi;
+        return a.order.compareTo(b.order);
+      });
+      for (final dup in group.skip(1)) {
+        await _globalCategories.doc(dup.id).delete();
+        removed++;
+      }
+    }
+    return removed;
+  }
+
   /// Agrège les noms de catégories déjà utilisés dans `menuItems` et crée les
   /// catégories globales manquantes (sans image → fallback gris).
   /// Retourne le nombre de catégories ajoutées.
@@ -334,6 +365,58 @@ class MenuManagementService {
 
   Future<void> deleteMenuItem(String id) async {
     await _menuItems.doc(id).delete();
+  }
+
+  /// Renomme une catégorie **dans le menu d'un restaurant** : tous les plats de
+  /// ce restaurant dont la catégorie vaut [oldName] (comparaison insensible à la
+  /// casse et aux espaces) reçoivent [newName]. Les autres restaurants ne sont
+  /// pas touchés.
+  ///
+  /// Si une catégorie globale porte le [newName] et possède une image, cette
+  /// image est aussi appliquée aux plats renommés (leur `imageUrl` étant une
+  /// copie figée de l'image de catégorie). Si le nouveau nom n'a pas d'image
+  /// globale, les images existantes des plats sont préservées.
+  ///
+  /// Retourne le nombre de plats mis à jour.
+  Future<int> renameCategoryForRestaurant({
+    required String restaurantId,
+    required String oldName,
+    required String newName,
+  }) async {
+    final target = newName.trim();
+    final key = oldName.trim().toLowerCase();
+    if (target.isEmpty || key.isEmpty) return 0;
+
+    // Image de la catégorie globale correspondant au nouveau nom (si elle
+    // existe) → reprise automatiquement par les plats renommés.
+    final globalImage =
+        imageForCategoryName(target, await getGlobalCategories());
+    final hasGlobalImage = globalImage != null && globalImage.isNotEmpty;
+
+    final snap =
+        await _menuItems.where('restaurantId', isEqualTo: restaurantId).get();
+    var updated = 0;
+    var batch = _firestore.batch();
+    var ops = 0;
+    for (final doc in snap.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final cat = (data['category'] ?? '').toString().trim().toLowerCase();
+      if (cat != key) continue;
+      batch.update(doc.reference, {
+        'category': target,
+        if (hasGlobalImage) 'imageUrl': globalImage,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      ops++;
+      updated++;
+      if (ops >= 450) {
+        await batch.commit();
+        batch = _firestore.batch();
+        ops = 0;
+      }
+    }
+    if (ops > 0) await batch.commit();
+    return updated;
   }
 
   Future<void> toggleAvailability(String id, bool isAvailable) async {

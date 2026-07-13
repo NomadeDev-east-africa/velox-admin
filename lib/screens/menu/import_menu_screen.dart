@@ -237,13 +237,12 @@ class _ImportMenuScreenState extends State<ImportMenuScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Deux formats acceptés : un fichier/​texte JSON (recommandé — fiable pour '
-              'tout menu, généré par une IA) OU du texte libre. Pour le texte : en-têtes '
-              'de catégorie en MAJUSCULES, plats « Nom : 600 FDJ (menu 900 FDJ) », tailles, '
-              'section « Suppléments » (limitez-les à certaines catégories entre '
-              'parenthèses : « Suppléments (Hamburgers, Tacos) »). Les boissons et desserts '
-              'sont exclus des suppléments par défaut. L\'image de chaque catégorie est '
-              'reprise automatiquement depuis la page Catégories. L\'aperçu reste modifiable.',
+              'Deux formats acceptés : un fichier/​texte JSON (recommandé) ou du texte '
+              'libre. La standardisation s\'applique automatiquement :\n'
+              '• le préfixe « Nos » est retiré des catégories (« Nos Burgers » → « Burgers ») ;\n'
+              '• chaque catégorie est mise au pluriel (« Glace » → « Glaces ») ;\n'
+              '• tous les prix sont majorés de 10 % puis arrondis à la centaine.\n'
+              'L\'aperçu reste entièrement modifiable avant l\'import.',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
             const SizedBox(height: defaultPadding),

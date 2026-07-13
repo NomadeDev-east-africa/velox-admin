@@ -234,13 +234,13 @@ class MenuParser {
             if (names.isNotEmpty) {
               supplementCategoriesSpecified = true;
               for (final n in names) {
-                supplementCategories.add(_cleanCategoryName(n).toLowerCase());
+                supplementCategories.add(standardizeCategoryName(n).toLowerCase());
               }
             }
           }
         } else {
           inSupplements = false;
-          current = _pushCategory(categories, _cleanCategoryName(l));
+          current = _pushCategory(categories, standardizeCategoryName(l));
         }
       } else if (!l.startsWith('(')) {
         // Ligne « texte » sans prix ni en-tête : nom potentiel d'un plat dont
@@ -286,21 +286,61 @@ class MenuParser {
     return cat;
   }
 
-  static String _cleanCategoryName(String raw) {
-    // Retirer la parenthèse explicative, puis Title Case
+  /// Nom de catégorie standardisé (partagé par le parser texte et le parser
+  /// JSON) :
+  /// - la parenthèse explicative et la ponctuation de fin sont retirées ;
+  /// - un préfixe possessif « Nos »/« Notre » est retiré (« Nos Burgers » →
+  ///   « Burgers ») ;
+  /// - chaque mot significatif est mis au pluriel (« Glace » → « Glaces ») ;
+  /// - Title Case.
+  static String standardizeCategoryName(String raw) {
     var s = raw.replaceAll(RegExp(r'\(.*?\)'), '').trim();
     s = s.replaceAll(RegExp(r'[:–-]+$'), '').trim();
+    // Préfixe possessif retiré (« Nos Burgers » → « Burgers »).
+    s = s.replaceFirst(RegExp(r'^(nos|notre)\s+', caseSensitive: false), '');
     if (s.isEmpty) return 'Autres';
     return s
         .split(RegExp(r'\s+'))
-        .map((w) => w.isEmpty
-            ? w
-            : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}')
+        .where((w) => w.isNotEmpty)
+        .map((w) => _capitalize(_pluralize(w)))
         .join(' ');
+  }
+
+  // Petits mots (articles, prépositions, conjonctions) laissés invariables.
+  static const _invariantWords = {
+    'de', 'du', 'des', 'd', 'la', 'le', 'les', 'l', 'au', 'aux', 'a', 'à',
+    'et', 'ou', 'en', 'sur', 'par', 'pour', 'avec', 'sans', 'un', 'une',
+  };
+
+  /// Met un mot français au pluriel selon une heuristique simple.
+  static String _pluralize(String w) {
+    final lower = w.toLowerCase();
+    if (lower.length < 3 || _invariantWords.contains(lower)) return w;
+    // Déjà au pluriel (…s / …x / …z).
+    if (lower.endsWith('s') || lower.endsWith('x') || lower.endsWith('z')) {
+      return w;
+    }
+    // …eau / …eu → …eaux / …eux (gâteau → gâteaux).
+    if (lower.endsWith('eau') || lower.endsWith('eu')) return '${w}x';
+    // …al → …aux (cheval → chevaux).
+    if (lower.endsWith('al')) return '${w.substring(0, w.length - 2)}aux';
+    return '${w}s';
+  }
+
+  static String _capitalize(String w) => w.isEmpty
+      ? w
+      : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}';
+
+  /// Règle de standardisation des prix : +10 % puis arrondi à la centaine la
+  /// plus proche. Un prix nul (non renseigné) reste nul. Partagée par les deux
+  /// parsers pour que **tous** les prix collectés soient traités à l'identique.
+  static int markupPrice(int raw) {
+    if (raw <= 0) return raw;
+    return (raw * 1.1 / 100).round() * 100;
   }
 
   static int _toInt(String raw) {
     final digits = raw.replaceAll(RegExp(r'[^\d]'), '');
-    return int.tryParse(digits) ?? 0;
+    return markupPrice(int.tryParse(digits) ?? 0);
   }
 }

@@ -108,9 +108,64 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
                 : const Icon(Icons.download_for_offline_outlined),
             label: const Text('Récupérer les catégories existantes'),
           ),
+          const SizedBox(width: 12),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : _mergeDuplicates,
+            icon: _busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.merge_type),
+            label: const Text('Fusionner les doublons'),
+          ),
         ],
       ),
     );
+  }
+
+  /// Supprime les catégories en double (même nom) en gardant celle qui a une
+  /// image. Corrige notamment le crash « exactly one item » du menu déroulant
+  /// des catégories quand deux « Tacos » existaient.
+  Future<void> _mergeDuplicates() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Fusionner les doublons'),
+        content: const Text(
+          'Les catégories portant le même nom seront fusionnées : une seule '
+          'entrée est conservée (celle qui a une image en priorité), les '
+          'autres sont supprimées.\n\nLes plats ne sont pas affectés.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Fusionner'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    setState(() => _busy = true);
+    try {
+      final removed = await _service.mergeDuplicateGlobalCategories();
+      _snack(
+        removed == 0
+            ? 'Aucun doublon trouvé.'
+            : '$removed doublon(s) supprimé(s).',
+        successColor,
+      );
+    } catch (e) {
+      _snack('Erreur: $e', errorColor);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   /// Réapplique les images des catégories aux plats correspondants.

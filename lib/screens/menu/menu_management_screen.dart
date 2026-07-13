@@ -110,10 +110,22 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
                 for (final cat in catNames) ...[
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Text(
-                      '$cat  (${byCat[cat]!.length})',
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.bold),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '$cat  (${byCat[cat]!.length})',
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.edit, size: 20),
+                          tooltip: 'Renommer la catégorie',
+                          color: primaryColor,
+                          onPressed: () => _renameCategory(cat),
+                        ),
+                      ],
                     ),
                   ),
                   ...byCat[cat]!.map((it) => _itemTile(it, categories)),
@@ -210,6 +222,61 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _renameCategory(String oldName) async {
+    final controller = TextEditingController(text: oldName);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Renommer la catégorie'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Nom de la catégorie',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (_) => Navigator.pop(ctx, controller.text.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primaryColor,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Renommer'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (newName == null || newName.isEmpty || newName == oldName) return;
+    try {
+      final count = await _service.renameCategoryForRestaurant(
+        restaurantId: widget.restaurantId,
+        oldName: oldName,
+        newName: newName,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Catégorie renommée « $newName » — $count plat(s) mis à jour'),
+          backgroundColor: successColor,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: errorColor),
+      );
+    }
   }
 
   Future<void> _deleteItem(MenuItem item) async {
