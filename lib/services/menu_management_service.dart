@@ -6,6 +6,7 @@ import '../models/menu_item.dart';
 import '../models/menu_category.dart';
 import '../models/global_category.dart';
 import '../models/library_image.dart';
+import '../utils/category_naming.dart';
 
 /// Service dédié à la gestion des menus depuis l'app admin :
 /// - catégories par restaurant (`restaurants/{id}/categories`)
@@ -26,25 +27,28 @@ class MenuManagementService {
 
   // ==================== CATÉGORIES GLOBALES ====================
 
+  /// Tri unique des catégories globales : `order`, puis nom.
+  ///
+  /// [streamGlobalCategories] et [getGlobalCategories] partagent ce comparateur
+  /// pour qu'un même catalogue s'affiche dans le même ordre partout — l'un
+  /// triait auparavant par nom et l'autre par `order`, donnant deux ordres
+  /// différents selon l'écran.
+  static int _byOrderThenName(GlobalCategory a, GlobalCategory b) {
+    final byOrder = a.order.compareTo(b.order);
+    if (byOrder != 0) return byOrder;
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  }
+
   Stream<List<GlobalCategory>> streamGlobalCategories() {
-    return _globalCategories.snapshots().map((snap) {
-      final list =
-          snap.docs.map((d) => GlobalCategory.fromFirestore(d)).toList();
-      // Tri alphabétique (insensible à la casse)
-      list.sort((a, b) =>
-          a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-      return list;
-    });
+    return _globalCategories.snapshots().map((snap) =>
+        snap.docs.map((d) => GlobalCategory.fromFirestore(d)).toList()
+          ..sort(_byOrderThenName));
   }
 
   Future<List<GlobalCategory>> getGlobalCategories() async {
     final snap = await _globalCategories.get();
-    final list = snap.docs.map((d) => GlobalCategory.fromFirestore(d)).toList();
-    list.sort((a, b) {
-      final byOrder = a.order.compareTo(b.order);
-      return byOrder != 0 ? byOrder : a.name.compareTo(b.name);
-    });
-    return list;
+    return snap.docs.map((d) => GlobalCategory.fromFirestore(d)).toList()
+      ..sort(_byOrderThenName);
   }
 
   Future<String> createGlobalCategory(GlobalCategory category) async {
@@ -57,13 +61,78 @@ class MenuManagementService {
     await _globalCategories.doc(category.id).update(category.toMap());
   }
 
+  /// Renomme une catégorie globale **et tous les plats qui la portent**.
+  ///
+  /// Les plats référencent leur catégorie par son nom : renommer le seul
+  /// document laisserait `menuItems.category` sur l'ancien nom, donc des plats
+  /// rattachés à une catégorie qui n'existe plus (rubrique fantôme dans l'admin,
+  /// fallback gris côté client). Les plats sont réécrits **avant** le document,
+  /// pour qu'une interruption laisse au pire un état encore cohérent.
+  ///
+  /// Les images ne sont pas touchées : un renommage ne change pas le visuel.
+  ///
+  /// Retourne le nombre de plats mis à jour.
+  Future<int> renameGlobalCategory(GlobalCategory category, String newName) async {
+    final target = newName.trim();
+    if (target.isEmpty || target == category.name.trim()) return 0;
+
+    final updated =
+        await _rewriteCategoryNameEverywhere(from: category.name, to: target);
+    await updateGlobalCategory(category.copyWith(name: target));
+    return updated;
+  }
+
+  /// Supprime une catégorie globale.
+  ///
+  /// **L'image n'est pas effacée de Storage** : les plats en gardent une copie
+  /// figée dans leur `imageUrl`, supprimer le fichier les ferait tomber en 404
+  /// côté client. Quelques Ko conservés valent mieux qu'une image cassée.
+  ///
+  /// N'empêche pas la suppression d'une catégorie encore utilisée : c'est à
+  /// l'appelant de vérifier via [countMenuItemsInCategory] et de proposer
+  /// [moveItemsAndDeleteCategory].
   Future<void> deleteGlobalCategory(GlobalCategory category) async {
     await _globalCategories.doc(category.id).delete();
-    if (category.storagePath != null && category.storagePath!.isNotEmpty) {
-      try {
-        await _storage.ref(category.storagePath!).delete();
-      } catch (_) {/* déjà absent */}
+  }
+
+  /// Nombre de plats (tous restaurants) rattachés à la catégorie [name].
+  ///
+  /// Compte sur [categoryKey], donc « Boissons Chaudes » est bien compté pour
+  /// « Boissons chaudes ».
+  Future<int> countMenuItemsInCategory(String name) async {
+    final key = categoryKey(name);
+    if (key.isEmpty) return 0;
+    final snap = await _menuItems.get();
+    return snap.docs.where((d) {
+      final data = d.data() as Map<String, dynamic>;
+      return categoryKey((data['category'] ?? '').toString()) == key;
+    }).length;
+  }
+
+  /// Déplace tous les plats de [category] vers [targetName], puis supprime la
+  /// catégorie. Les plats reçoivent l'image de la catégorie cible si la leur
+  /// n'était qu'un héritage (une photo propre au plat est préservée).
+  ///
+  /// Les plats sont déplacés **avant** la suppression : une interruption laisse
+  /// au pire des plats déjà rangés dans une catégorie valide.
+  ///
+  /// Retourne le nombre de plats déplacés.
+  Future<int> moveItemsAndDeleteCategory({
+    required GlobalCategory category,
+    required String targetName,
+  }) async {
+    final target = targetName.trim();
+    if (target.isEmpty || categoryKey(target) == categoryKey(category.name)) {
+      throw ArgumentError('La catégorie cible doit être différente.');
     }
+    final targetImage = imageForCategoryName(target, await getGlobalCategories());
+    final moved = await _rewriteCategoryNameEverywhere(
+      from: category.name,
+      to: target,
+      image: targetImage,
+    );
+    await deleteGlobalCategory(category);
+    return moved;
   }
 
   /// Upload une image dédiée de catégorie : `menu_categories/{ts}_{slug}.jpg`.
@@ -78,12 +147,14 @@ class MenuManagementService {
     return (url, path);
   }
 
-  /// Image globale associée à un nom de catégorie (insensible à la casse), ou
-  /// `null` (→ fallback gris). [categories] évite une relecture Firestore.
+  /// Image globale associée à un nom de catégorie, ou `null` (→ fallback gris).
+  ///
+  /// La correspondance passe par [categoryKey] : « Nos Boissons » retrouve donc
+  /// l'image de « Boissons ». [categories] évite une relecture Firestore.
   String? imageForCategoryName(String name, List<GlobalCategory> categories) {
-    final key = name.trim().toLowerCase();
+    final key = categoryKey(name);
     for (final c in categories) {
-      if (c.name.trim().toLowerCase() == key) return c.imageUrl;
+      if (categoryKey(c.name) == key) return c.imageUrl;
     }
     return null;
   }
@@ -91,16 +162,23 @@ class MenuManagementService {
   /// Crée les catégories globales manquantes pour [namesWithImages]
   /// (nom → imageUrl éventuelle). Complète l'image si la catégorie existait
   /// sans image. Retourne le nombre de catégories créées.
+  ///
+  /// L'existence est testée sur [categoryKey], pas sur le nom brut : importer
+  /// « Milks Shakes » alors que « Milkshakes » existe déjà ne crée plus de
+  /// doublon. C'est ce test, trop strict auparavant, qui a fait passer le
+  /// catalogue à 123 entrées pour ~96 catégories réelles.
   Future<int> ensureGlobalCategories(
       Map<String, String?> namesWithImages) async {
     final existing = await getGlobalCategories();
-    final byName = {for (final c in existing) c.name.trim().toLowerCase(): c};
+    final byName = {for (final c in existing) categoryKey(c.name): c};
     var created = 0;
-    var order = existing.length;
+    // `order` doit continuer la suite existante. Se baser sur `existing.length`
+    // produisait des collisions dès qu'une catégorie avait été supprimée.
+    var order = existing.fold<int>(-1, (max, c) => c.order > max ? c.order : max) + 1;
     for (final entry in namesWithImages.entries) {
       final name = entry.key.trim();
       if (name.isEmpty) continue;
-      final key = name.toLowerCase();
+      final key = categoryKey(name);
       final current = byName[key];
       if (current == null) {
         final cat = GlobalCategory(
@@ -140,12 +218,12 @@ class MenuManagementService {
   Future<int> applyCategoryImagesToMenuItems({
     bool overwriteExisting = false,
   }) async {
-    // 1. Index nom (normalisé) -> imageUrl, pour les catégories qui ont une image.
+    // 1. Index clé normalisée -> imageUrl, pour les catégories qui ont une image.
     final categories = await getGlobalCategories();
     final imageByName = <String, String>{};
     for (final c in categories) {
       if (c.hasImage) {
-        imageByName[c.name.trim().toLowerCase()] = c.imageUrl!;
+        imageByName[categoryKey(c.name)] = c.imageUrl!;
       }
     }
     if (imageByName.isEmpty) return 0;
@@ -157,12 +235,15 @@ class MenuManagementService {
     var ops = 0;
     for (final doc in snap.docs) {
       final data = doc.data() as Map<String, dynamic>;
-      final key = (data['category'] ?? '').toString().trim().toLowerCase();
+      final key = categoryKey((data['category'] ?? '').toString());
       final target = imageByName[key];
       if (target == null) continue; // pas d'image pour cette catégorie
 
       final current = (data['imageUrl'] ?? '').toString();
       if (current == target) continue; // déjà à jour
+      // Une photo propre au plat n'est jamais écrasée par l'image de sa
+      // catégorie, même en mode [overwriteExisting].
+      if (isOwnDishPhoto(current)) continue;
       if (!overwriteExisting && current.isNotEmpty) continue; // on préserve
 
       batch.update(doc.reference, {
@@ -181,30 +262,51 @@ class MenuManagementService {
     return updated;
   }
 
-  /// Fusionne les catégories globales en **double** (même nom, insensible à la
-  /// casse et aux espaces, ex. deux « Tacos ») : conserve une seule entrée par
-  /// nom — de préférence celle qui a une image — et supprime les autres.
+  /// Fusionne les catégories globales désignant la même chose (même
+  /// [categoryKey] : « Milkshake », « Milks Shakes », « Nos Milk Shake »…).
   ///
-  /// Les plats ne sont pas affectés (ils référencent la catégorie par son nom,
-  /// identique pour tous les doublons). Retourne le nombre d'entrées supprimées.
+  /// Conserve une seule entrée par famille — de préférence celle qui porte une
+  /// image — et supprime les autres.
+  ///
+  /// **Les plats sont réécrits** : chaque `menuItems.category` pointant vers une
+  /// variante absorbée reçoit le nom conservé, et l'image de la catégorie
+  /// conservée si la sienne n'était qu'un héritage. Sans cette réécriture, les
+  /// plats resteraient sur un nom que plus aucune catégorie ne porte, et
+  /// [seedGlobalCategoriesFromMenuItems] recréerait aussitôt les doublons.
+  ///
+  /// L'ordre est délibéré : les plats d'abord, la suppression ensuite. Une
+  /// interruption en cours laisse au pire des plats pointant vers une catégorie
+  /// encore existante — jamais vers un nom orphelin.
+  ///
+  /// Retourne le nombre d'entrées supprimées.
   Future<int> mergeDuplicateGlobalCategories() async {
     final cats = await getGlobalCategories();
     final byKey = <String, List<GlobalCategory>>{};
     for (final c in cats) {
-      byKey.putIfAbsent(c.name.trim().toLowerCase(), () => []).add(c);
+      byKey.putIfAbsent(categoryKey(c.name), () => []).add(c);
     }
+
     var removed = 0;
     for (final group in byKey.values) {
       if (group.length < 2) continue;
       // Conserver en priorité l'entrée qui possède une image, puis le plus
-      // petit `order` ; supprimer les autres.
+      // petit `order`.
       group.sort((a, b) {
         final ai = a.hasImage ? 0 : 1;
         final bi = b.hasImage ? 0 : 1;
         if (ai != bi) return ai - bi;
         return a.order.compareTo(b.order);
       });
+      final keep = group.first;
+
       for (final dup in group.skip(1)) {
+        await _rewriteCategoryNameEverywhere(
+          from: dup.name,
+          to: keep.name,
+          image: keep.imageUrl,
+        );
+        // On supprime le document, mais pas son image dans Storage : elle peut
+        // encore être référencée par les plats de la catégorie conservée.
         await _globalCategories.doc(dup.id).delete();
         removed++;
       }
@@ -212,8 +314,66 @@ class MenuManagementService {
     return removed;
   }
 
+  /// Réécrit `category` de **tous** les plats (tous restaurants) rattachés à la
+  /// catégorie [from], vers [to]. Applique [image] aux plats sans image ou dont
+  /// l'image n'est qu'un héritage de catégorie ; les photos propres au plat sont
+  /// préservées. Retourne le nombre de plats mis à jour.
+  ///
+  /// L'appartenance est testée sur [categoryKey], pas sur l'égalité du nom : un
+  /// plat rangé dans « Boissons Chaudes » suit sa catégorie « Boissons chaudes »
+  /// alors qu'une requête `isEqualTo` l'aurait laissé derrière, orphelin. D'où le
+  /// parcours complet de la collection plutôt qu'une requête indexée.
+  Future<int> _rewriteCategoryNameEverywhere({
+    required String from,
+    required String to,
+    String? image,
+  }) async {
+    final target = to.trim();
+    final sourceKey = categoryKey(from);
+    if (target.isEmpty || sourceKey.isEmpty) return 0;
+
+    final snap = await _menuItems.get();
+    var updated = 0;
+    var batch = _firestore.batch();
+    var ops = 0;
+    for (final doc in snap.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final name = (data['category'] ?? '').toString();
+      if (categoryKey(name) != sourceKey) continue;
+
+      final current = (data['imageUrl'] ?? '').toString();
+      final takesName = name.trim() != target;
+      final needsImage = image != null &&
+          image.isNotEmpty &&
+          current != image &&
+          !isOwnDishPhoto(current);
+      if (!takesName && !needsImage) continue; // déjà conforme
+
+      batch.update(doc.reference, {
+        'category': target,
+        if (needsImage) 'imageUrl': image,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      ops++;
+      updated++;
+      if (ops >= 450) {
+        await batch.commit();
+        batch = _firestore.batch();
+        ops = 0;
+      }
+    }
+    if (ops > 0) await batch.commit();
+    return updated;
+  }
+
   /// Agrège les noms de catégories déjà utilisés dans `menuItems` et crée les
   /// catégories globales manquantes (sans image → fallback gris).
+  ///
+  /// S'appuie sur [ensureGlobalCategories], donc sur [categoryKey] : un plat
+  /// rangé dans « Tacos » alors que la catégorie s'appelle « tacos » ne fait
+  /// plus apparaître de seconde entrée. Tant que la comparaison se faisait sur
+  /// le nom brut, chaque appel recréait les variantes tout juste fusionnées.
+  ///
   /// Retourne le nombre de catégories ajoutées.
   Future<int> seedGlobalCategoriesFromMenuItems() async {
     final snap = await _menuItems.get();
@@ -439,6 +599,10 @@ class MenuManagementService {
   /// propres au restaurant). [categoryImages] : nom de catégorie → image
   /// éventuelle, utilisé pour alimenter le **catalogue global** de catégories
   /// (création des catégories manquantes, complétion d'image si absente).
+  ///
+  /// Les noms de catégories du fichier importé sont réalignés sur ceux du
+  /// catalogue via [canonicalCategoryName] : un menu écrivant « Milks Shakes »
+  /// range ses plats dans « Milkshakes » si le catalogue le connaît déjà.
   Future<int> importMenu({
     required String restaurantId,
     required List<MenuItem> items,
@@ -447,13 +611,22 @@ class MenuManagementService {
     // 1. Alimenter le catalogue global de catégories (images incluses).
     await ensureGlobalCategories(categoryImages);
 
-    // 2. Créer les plats par batch (max 500 écritures / batch)
+    // 2. Aligner les plats sur les noms du catalogue. Sans cette étape,
+    //    `ensureGlobalCategories` ne crée certes plus de catégorie en double,
+    //    mais les plats garderaient l'orthographe du fichier et pointeraient
+    //    vers un nom que plus aucune catégorie ne porte.
+    final catalogue = (await getGlobalCategories()).map((c) => c.name).toList();
+
+    // 3. Créer les plats par batch (max 500 écritures / batch)
     var written = 0;
     var batch = _firestore.batch();
     var ops = 0;
     for (final item in items) {
+      final canon = canonicalCategoryName(item.category, catalogue);
+      final resolved =
+          canon == item.category ? item : item.copyWith(category: canon);
       final ref = _menuItems.doc();
-      batch.set(ref, item.toMap());
+      batch.set(ref, resolved.toMap());
       ops++;
       written++;
       if (ops >= 450) {

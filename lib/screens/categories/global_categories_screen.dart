@@ -330,7 +330,18 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
   Future<void> _editCategory(GlobalCategory cat) async {
     final name = await _promptName(title: 'Renommer', initial: cat.name);
     if (name == null || name.trim().isEmpty || name.trim() == cat.name) return;
-    await _service.updateGlobalCategory(cat.copyWith(name: name.trim()));
+    setState(() => _busy = true);
+    try {
+      // Renomme aussi les plats : sans cela ils resteraient sur l'ancien nom.
+      final moved = await _service.renameGlobalCategory(cat, name.trim());
+      if (mounted && moved > 0) {
+        _snack('$moved plat(s) déplacé(s) vers « ${name.trim()} ».', successColor);
+      }
+    } catch (e) {
+      _snack('Erreur: $e', errorColor);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _changeImage(GlobalCategory cat) async {
@@ -398,16 +409,61 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
   }
 
   Future<void> _deleteCategory(GlobalCategory cat) async {
-    final ok = await showDialog<bool>(
+    setState(() => _busy = true);
+    final int used;
+    final List<GlobalCategory> others;
+    try {
+      used = await _service.countMenuItemsInCategory(cat.name);
+      others = (await _service.getGlobalCategories())
+          .where((c) => c.id != cat.id)
+          .toList();
+    } catch (e) {
+      _snack('Erreur: $e', errorColor);
+      if (mounted) setState(() => _busy = false);
+      return;
+    }
+    if (mounted) setState(() => _busy = false);
+    if (!mounted) return;
+
+    // Catégorie vide : suppression directe, rien à déplacer.
+    if (used == 0) {
+      final ok = await _confirmSimpleDelete(cat);
+      if (ok == true) await _service.deleteGlobalCategory(cat);
+      return;
+    }
+
+    final target = await _promptMoveTarget(cat: cat, used: used, others: others);
+    if (target == null) return;
+
+    setState(() => _busy = true);
+    try {
+      final moved = await _service.moveItemsAndDeleteCategory(
+        category: cat,
+        targetName: target,
+      );
+      if (mounted) {
+        _snack('$moved plat(s) déplacé(s) vers « $target ». '
+            'Catégorie « ${cat.name} » supprimée.', successColor);
+      }
+    } catch (e) {
+      _snack('Erreur: $e', errorColor);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<bool?> _confirmSimpleDelete(GlobalCategory cat) {
+    return showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Supprimer la catégorie'),
-        content: Text(
-            'Supprimer « ${cat.name} » ?\nLes plats existants ne sont pas supprimés (ils gardent leur image actuelle).'),
+        content: Text('Supprimer « ${cat.name} » ?\n'
+            'Aucun plat n\'utilise cette catégorie.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Annuler')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: errorColor),
@@ -416,7 +472,63 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
         ],
       ),
     );
-    if (ok == true) await _service.deleteGlobalCategory(cat);
+  }
+
+  /// Demande vers quelle catégorie déplacer les plats avant suppression.
+  /// Renvoie le nom cible, ou `null` si l'admin annule.
+  Future<String?> _promptMoveTarget({
+    required GlobalCategory cat,
+    required int used,
+    required List<GlobalCategory> others,
+  }) {
+    String? choice;
+    return showDialog<String>(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: Text('Supprimer « ${cat.name} » ?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('$used plat(s) utilisent cette catégorie. '
+                  'Où les déplacer ?'),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                initialValue: choice,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Nouvelle catégorie',
+                  isDense: true,
+                ),
+                items: others
+                    .map((c) => DropdownMenuItem(
+                          value: c.name,
+                          child: Text(c.name, overflow: TextOverflow.ellipsis),
+                        ))
+                    .toList(),
+                onChanged: (v) => setLocal(() => choice = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Annuler'),
+            ),
+            TextButton(
+              // Tant qu'aucune destination n'est choisie, on ne peut pas valider :
+              // c'est ce qui garantit qu'aucun plat ne se retrouve orphelin.
+              onPressed: choice == null
+                  ? null
+                  : () => Navigator.pop(context, choice),
+              style: TextButton.styleFrom(foregroundColor: errorColor),
+              child: const Text('Déplacer et supprimer'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _seedFromMenuItems() async {
