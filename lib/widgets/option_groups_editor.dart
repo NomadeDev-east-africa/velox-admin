@@ -42,8 +42,8 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
     _emit();
   }
 
-  void _removeGroup(int i) {
-    setState(() => _drafts.removeAt(i));
+  void _removeGroup(_GroupDraft draft) {
+    setState(() => _drafts.remove(draft));
     _emit();
   }
 
@@ -87,14 +87,17 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
               style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
             ),
           ),
-        for (int i = 0; i < _drafts.length; i++)
-          _buildGroupCard(i, _drafts[i]),
+        for (final draft in _drafts) _buildGroupCard(draft),
       ],
     );
   }
 
-  Widget _buildGroupCard(int index, _GroupDraft draft) {
+  Widget _buildGroupCard(_GroupDraft draft) {
     return Card(
+      // Sans clé, Flutter apparie les cartes par position : supprimer un groupe
+      // laisserait les champs de texte des groupes suivants afficher l'ancienne
+      // valeur (l'`initialValue` n'est lu qu'à la première construction).
+      key: ObjectKey(draft),
       margin: const EdgeInsets.only(bottom: 12),
       // Fond sombre (thème) : un fond clair rendait le texte clair illisible.
       // veloxSurface est plus foncé que le fond des champs (veloxSurfaceAlt),
@@ -141,7 +144,7 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
                 IconButton(
                   icon: const Icon(Icons.delete_outline, color: errorColor),
                   tooltip: 'Supprimer le groupe',
-                  onPressed: () => _removeGroup(index),
+                  onPressed: () => _removeGroup(draft),
                 ),
               ],
             ),
@@ -186,21 +189,26 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
               ],
             ),
             const Divider(),
-            for (int j = 0; j < draft.choices.length; j++)
+            // Chaque ligne est identifiée par son objet, jamais par son index :
+            // c'est ce qui permet à Flutter de suivre le bon champ quand un
+            // choix est supprimé au milieu de la liste. Les closures capturent
+            // le `choice` lui-même, pour la même raison.
+            for (final choice in draft.choices)
               Padding(
+                key: ObjectKey(choice),
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
                   children: [
                     Expanded(
                       flex: 3,
                       child: TextFormField(
-                        initialValue: draft.choices[j].name,
+                        initialValue: choice.name,
                         decoration: InputDecoration(
                           labelText: draft.free ? 'Choix (gratuit)' : 'Choix',
                           isDense: true,
                         ),
                         onChanged: (v) {
-                          draft.choices[j].name = v;
+                          choice.name = v;
                           _emit();
                         },
                       ),
@@ -211,9 +219,8 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
                       Expanded(
                         flex: 2,
                         child: TextFormField(
-                          initialValue: draft.choices[j].price == 0
-                              ? ''
-                              : draft.choices[j].price.toString(),
+                          initialValue:
+                              choice.price == 0 ? '' : choice.price.toString(),
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
                             labelText: 'Supplément',
@@ -221,7 +228,7 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
                             isDense: true,
                           ),
                           onChanged: (v) {
-                            draft.choices[j].price = int.tryParse(v) ?? 0;
+                            choice.price = int.tryParse(v) ?? 0;
                             _emit();
                           },
                         ),
@@ -229,8 +236,9 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
                     ],
                     IconButton(
                       icon: const Icon(Icons.close, size: 18),
+                      tooltip: 'Supprimer ce choix',
                       onPressed: () {
-                        setState(() => draft.choices.removeAt(j));
+                        setState(() => draft.choices.remove(choice));
                         _emit();
                       },
                     ),
