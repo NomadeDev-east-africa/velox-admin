@@ -527,6 +527,30 @@ class MenuManagementService {
     await _menuItems.doc(id).delete();
   }
 
+  /// Supprime **tous les plats** du menu d'un restaurant (menu entier).
+  /// Ne touche PAS aux catégories globales ni aux autres restaurants.
+  /// Suppression par batch (max 500 écritures / batch). Retourne le nombre
+  /// de plats supprimés.
+  Future<int> deleteAllMenuItems(String restaurantId) async {
+    final snap =
+        await _menuItems.where('restaurantId', isEqualTo: restaurantId).get();
+    var deleted = 0;
+    var batch = _firestore.batch();
+    var ops = 0;
+    for (final doc in snap.docs) {
+      batch.delete(doc.reference);
+      ops++;
+      deleted++;
+      if (ops >= 450) {
+        await batch.commit();
+        batch = _firestore.batch();
+        ops = 0;
+      }
+    }
+    if (ops > 0) await batch.commit();
+    return deleted;
+  }
+
   /// Renomme une catégorie **dans le menu d'un restaurant** : tous les plats de
   /// ce restaurant dont la catégorie vaut [oldName] (comparaison insensible à la
   /// casse et aux espaces) reçoivent [newName]. Les autres restaurants ne sont

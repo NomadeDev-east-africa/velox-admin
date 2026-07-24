@@ -186,6 +186,33 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
                     const Text('Gratuit (sans supplément)'),
                   ],
                 ),
+                // Plafond de sélection : seulement pour un groupe « multiple »
+                // (un groupe « unique » vaut toujours 1 choix). 0 / vide = illimité.
+                if (draft.type == OptionType.multiple)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Max :'),
+                      const SizedBox(width: 6),
+                      SizedBox(
+                        width: 56,
+                        child: TextFormField(
+                          key: ValueKey('max_${draft.hashCode}'),
+                          initialValue:
+                              draft.maxChoices == 0 ? '' : draft.maxChoices.toString(),
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            hintText: '∞',
+                          ),
+                          onChanged: (v) {
+                            draft.maxChoices = int.tryParse(v) ?? 0;
+                            _emit();
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
             const Divider(),
@@ -268,6 +295,7 @@ class _GroupDraft {
   OptionType type;
   bool required;
   bool free; // choix gratuits (sans supplément) : masque le champ prix
+  int maxChoices; // plafond de sélection (multiple) ; 0 = illimité
   List<_ChoiceDraft> choices;
 
   _GroupDraft({
@@ -276,6 +304,7 @@ class _GroupDraft {
     required this.required,
     required this.choices,
     this.free = false,
+    this.maxChoices = 0,
   });
 
   factory _GroupDraft.empty() => _GroupDraft(
@@ -299,6 +328,7 @@ class _GroupDraft {
         name: g.name,
         type: g.type,
         required: g.required,
+        maxChoices: g.maxChoices,
         // Un groupe dont tous les choix sont à 0 est considéré « gratuit ».
         free: g.choices.isNotEmpty && g.choices.every((c) => c.price == 0),
         choices:
@@ -309,6 +339,8 @@ class _GroupDraft {
         name: name.trim(),
         type: type,
         required: required,
+        // Le plafond n'a de sens que pour un groupe multiple.
+        maxChoices: type == OptionType.multiple ? maxChoices : 0,
         choices: choices
             .where((c) => c.name.trim().isNotEmpty)
             .map((c) => OptionChoice(name: c.name.trim(), price: c.price))

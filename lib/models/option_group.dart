@@ -17,11 +17,17 @@ class OptionGroup {
   final bool required;
   final List<OptionChoice> choices;
 
+  /// Nombre **maximum** de choix sélectionnables (uniquement pertinent pour un
+  /// groupe `multiple`). `0` = illimité. Ex. Tacos XL → `maxChoices: 2`.
+  /// Un groupe `single` vaut toujours 1 choix, quelle que soit cette valeur.
+  final int maxChoices;
+
   const OptionGroup({
     required this.name,
     this.type = OptionType.multiple,
     this.required = false,
     this.choices = const [],
+    this.maxChoices = 0,
   });
 
   Map<String, dynamic> toMap() {
@@ -29,6 +35,9 @@ class OptionGroup {
       'name': name,
       'type': type.name, // 'single' | 'multiple'
       'required': required,
+      // Écrit uniquement si une limite existe → additif, ne pollue pas les
+      // documents existants ni les groupes sans plafond.
+      if (maxChoices > 0) 'maxChoices': maxChoices,
       'choices': choices.map((c) => c.toMap()).toList(),
     };
   }
@@ -38,6 +47,7 @@ class OptionGroup {
       name: map['name'] ?? '',
       type: OptionTypeX.fromString(map['type']),
       required: map['required'] ?? false,
+      maxChoices: (map['maxChoices'] as num?)?.toInt() ?? 0,
       choices: (map['choices'] as List?)
               ?.map((c) => OptionChoice.fromMap(
                     Map<String, dynamic>.from(c as Map),
@@ -63,12 +73,14 @@ class OptionGroup {
     OptionType? type,
     bool? required,
     List<OptionChoice>? choices,
+    int? maxChoices,
   }) {
     return OptionGroup(
       name: name ?? this.name,
       type: type ?? this.type,
       required: required ?? this.required,
       choices: choices ?? this.choices,
+      maxChoices: maxChoices ?? this.maxChoices,
     );
   }
 }

@@ -95,6 +95,9 @@ class MenuJsonParser {
             basePrice:
                 _toInt(item['prix_seul'] ?? item['prix'] ?? item['price']),
             menuPrice: _toIntOrNull(item['prix_menu']),
+            // Groupes d'options explicites déclarés sur le plat (garnitures,
+            // boisson incluse, choix de pâtes, sauces…).
+            extraGroups: _parseOptions(item['options']),
           ));
         }
       }
@@ -145,6 +148,8 @@ class MenuJsonParser {
           required: false,
           choices: choices,
         ),
+      // Groupes d'options explicites éventuels (mêmes que pour un plat simple).
+      ..._parseOptions(raw['options']),
     ];
 
     final item =
@@ -153,20 +158,78 @@ class MenuJsonParser {
     cat.items.add(item);
   }
 
-  // Tous les prix passent par ici → +10 % arrondi à la centaine (règle
-  // partagée avec le parser texte via [MenuParser.markupPrice]).
-  static int _toInt(dynamic v) {
-    int raw;
-    if (v is int) {
-      raw = v;
-    } else if (v is num) {
-      raw = v.round();
-    } else if (v is String) {
-      raw = int.tryParse(v.replaceAll(RegExp(r'[^\d]'), '')) ?? 0;
-    } else {
-      raw = 0;
+  /// Parse un tableau d'**options explicites** déclaré sur un plat dans le JSON
+  /// et le convertit en [OptionGroup]s (rattachés au plat via `extraGroups`).
+  ///
+  /// Permet d'exprimer ce que la génération automatique ne devine pas : choix de
+  /// garniture (crêpe), boisson incluse, type de pâtes, sauces au choix…
+  ///
+  /// Schéma tolérant (clés FR ou EN) :
+  /// ```json
+  /// "options": [
+  ///   { "nom": "Garniture", "type": "single", "obligatoire": true,
+  ///     "choix": [ { "nom": "Nutella", "prix": 0 }, { "nom": "Miel", "prix": 0 } ] },
+  ///   { "nom": "Sauces", "type": "multiple",
+  ///     "choix": [ { "nom": "Roquefort", "prix": 600 } ] }
+  /// ]
+  /// ```
+  /// - `type` : « single »/« unique » → choix unique ; sinon multiple.
+  /// - `obligatoire`/`required`/`requis` : booléen (défaut false).
+  /// - `maxChoices`/`max`/`nombre` : plafond de sélection pour un groupe multiple
+  ///   (ex. Tacos XL → 2). Ignoré pour un groupe `single`. Défaut 0 = illimité.
+  /// - `choix`/`choices` : liste d'objets `{nom, prix}` ou de simples chaînes.
+  /// - `prix` d'un choix = supplément (0 = inclus). Passe par le même markup +10 %.
+  static List<OptionGroup> _parseOptions(dynamic raw) {
+    if (raw is! List) return const [];
+    final groups = <OptionGroup>[];
+    for (final g in raw) {
+      if (g is! Map) continue;
+      final name = (g['nom'] ?? g['name'])?.toString().trim();
+      if (name == null || name.isEmpty) continue;
+      final typeStr = (g['type'] ?? '').toString().toLowerCase();
+      final type = (typeStr == 'single' || typeStr == 'unique')
+          ? OptionType.single
+          : OptionType.multiple;
+      final required =
+          (g['obligatoire'] ?? g['required'] ?? g['requis']) == true;
+      // Plafond de sélection (groupes multiples) : maxChoices / max / nombre.
+      final rawMax = g['maxChoices'] ?? g['max'] ?? g['nombre'];
+      final maxChoices = rawMax is num ? rawMax.toInt() : 0;
+      final rawChoices = g['choix'] ?? g['choices'];
+      final choices = <OptionChoice>[];
+      if (rawChoices is List) {
+        for (final c in rawChoices) {
+          if (c is Map) {
+            final cn = (c['nom'] ?? c['name'])?.toString().trim();
+            if (cn == null || cn.isEmpty) continue;
+            choices.add(
+                OptionChoice(name: cn, price: _toInt(c['prix'] ?? c['price'])));
+          } else if (c is String && c.trim().isNotEmpty) {
+            choices.add(OptionChoice(name: c.trim(), price: 0));
+          }
+        }
+      }
+      if (choices.isEmpty) continue;
+      groups.add(OptionGroup(
+          name: name,
+          type: type,
+          required: required,
+          maxChoices: type == OptionType.multiple ? maxChoices : 0,
+          choices: choices));
     }
-    return MenuParser.markupPrice(raw);
+    return groups;
+  }
+
+  // Prix BRUT (aucune marge ici). La grille tarifaire est appliquée en une
+  // passe unique après le parsing, via [MenuParser.applyPricingGrid], qui seule
+  // sait distinguer plat principal / boisson / frite / option.
+  static int _toInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.round();
+    if (v is String) {
+      return int.tryParse(v.replaceAll(RegExp(r'[^\d]'), '')) ?? 0;
+    }
+    return 0;
   }
 
   static int? _toIntOrNull(dynamic v) {

@@ -53,6 +53,23 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
               ),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Center(
+              child: ElevatedButton.icon(
+                onPressed: _deleteWholeMenu,
+                icon: const Icon(Icons.delete_sweep, size: 20),
+                label: const Text('Supprimer menu entier'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: errorColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  minimumSize: const Size(0, 40),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
       body: _buildItemsTab(),
@@ -294,6 +311,56 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
         ),
       ),
     );
+  }
+
+  /// Supprime TOUT le menu du restaurant (tous les plats). Action irréversible :
+  /// double confirmation avant exécution. Ne touche pas aux catégories globales.
+  Future<void> _deleteWholeMenu() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Supprimer le menu entier ?'),
+        content: Text(
+          'Tous les plats du menu de « ${widget.restaurantName} » seront '
+          'définitivement supprimés. Les catégories globales et les autres '
+          'restaurants ne sont pas affectés.\n\nCette action est irréversible.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.delete_sweep, size: 18),
+            label: const Text('Tout supprimer'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: errorColor,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    try {
+      final count = await _service.deleteAllMenuItems(widget.restaurantId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(count == 0
+              ? 'Aucun plat à supprimer'
+              : '$count plat(s) supprimé(s) — menu vidé'),
+          backgroundColor: count == 0 ? Colors.orange : successColor,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: errorColor),
+      );
+    }
   }
 
   // ==================== HELPERS ====================

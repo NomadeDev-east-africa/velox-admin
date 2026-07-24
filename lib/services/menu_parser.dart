@@ -331,16 +331,111 @@ class MenuParser {
       ? w
       : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}';
 
-  /// Règle de standardisation des prix : +10 % puis arrondi à la centaine la
-  /// plus proche. Un prix nul (non renseigné) reste nul. Partagée par les deux
-  /// parsers pour que **tous** les prix collectés soient traités à l'identique.
+  /// Grille tarifaire : marge FIXE ajoutée au prix brut resto, par tranche de
+  /// prix. Remplace l'ancien +10 %. Un prix nul (non renseigné) reste nul.
+  ///
+  /// | Tranche (brut)  | Marge |
+  /// |---|---|
+  /// | < 300           | +0    |
+  /// | 300 – 799       | +50   |
+  /// | 800 – 1399      | +100  |
+  /// | 1400 – 1849     | +150  |
+  /// | 1850 – 2349     | +200  |
+  /// | 2350 – 2849     | +250  |
+  /// | 2850 – 3399     | +300  |
+  /// | 3400 – 3849     | +350  |
+  /// | 3850 – 4399     | +400  |
+  /// | 4400 – 4849     | +500  |
+  /// | 4850 – 7999     | +600  |
+  /// | 8000 – 9999     | +1000 |
+  /// | 10000 – 19999   | +1500 |
+  /// | 20000 – 29999   | +2000 |
+  /// | ≥ 30000         | +2500 |
+  ///
+  /// Les bornes suivent une logique de **seuil** (la tranche s'étend jusqu'au
+  /// seuil suivant) : un prix « entre deux tranches » (750, 1375…) reçoit la
+  /// marge de la tranche inférieure, jamais 0.
+  ///
+  /// ⚠️ Ne s'applique qu'aux **plats principaux** (via [applyPricingGrid]). Les
+  /// boissons, les frites et TOUS les choix d'options (sauces, extras,
+  /// suppléments) gardent leur prix brut : ils ne passent jamais par ici.
   static int markupPrice(int raw) {
     if (raw <= 0) return raw;
-    return (raw * 1.1 / 100).round() * 100;
+    return raw + _margin(raw);
   }
 
+  static int _margin(int p) {
+    if (p < 300) return 0;
+    if (p < 800) return 50;
+    if (p < 1400) return 100;
+    if (p < 1850) return 150;
+    if (p < 2350) return 200;
+    if (p < 2850) return 250;
+    if (p < 3400) return 300;
+    if (p < 3850) return 350;
+    if (p < 4400) return 400;
+    if (p < 4850) return 500;
+    if (p < 8000) return 600;
+    if (p < 10000) return 1000;
+    if (p < 20000) return 1500;
+    if (p < 30000) return 2000;
+    return 2500;
+  }
+
+  /// Catégories « boisson » exclues de la marge (mais PAS les desserts ni les
+  /// glaces, qui sont de la nourriture et suivent la grille).
+  static final _drinkCategoryRegex = RegExp(
+    r'boisson|jus|cocktail|smoothie|milk\s*shake|frappe|soda|limonade'
+    r'|soft|th[ée]|infusion|caf[ée]|\beau\b',
+    caseSensitive: false,
+  );
+
+  /// Boissons reconnues par leur **nom** (filet de sécurité si la catégorie n'a
+  /// pas un nom « boisson » explicite). Couvre les marques courantes à Djibouti.
+  static final _drinkNameRegex = RegExp(
+    r'\b(coca|cola|pepsi|fanta|sprite|mizone?|mizo|grenadine|oasis|schweppes'
+    r'|red\s*bull|redbull|soda|limonade|ice\s*tea|ice-?tea|th[ée]\s*glac|perrier'
+    r'|san\s*pellegrino|vittel|evian|ambo|smoothie|milk\s*shake|frapp[ée])\b',
+    caseSensitive: false,
+  );
+
+  /// Frites vendues seules (accompagnement) : exclues de la marge. On exige que
+  /// le nom COMMENCE par « frite(s) » pour ne pas capturer un plat composé
+  /// (« Poulet frites » garde la marge). Reste corrigeable dans l'aperçu.
+  static final _friesRegex =
+      RegExp(r'^\s*frites?\b', caseSensitive: false);
+
+  static bool isDrinkCategory(String name) =>
+      _drinkCategoryRegex.hasMatch(name);
+  static bool isDrinkName(String name) => _drinkNameRegex.hasMatch(name);
+  static bool isFries(String name) => _friesRegex.hasMatch(name);
+
+  /// Applique la grille tarifaire à un [ParsedMenu] tout juste parsé (prix
+  /// bruts). Majoré : prix de base, formule menu et prix par taille des **plats
+  /// principaux**. Conservé au prix brut : les catégories boisson, les frites,
+  /// et tous les choix d'options (jamais touchés ici).
+  static void applyPricingGrid(ParsedMenu menu) {
+    for (final cat in menu.categories) {
+      final drink = isDrinkCategory(cat.name);
+      for (final item in cat.items) {
+        // Prix brut conservé : catégorie boisson, OU nom de boisson (filet de
+        // sécurité), OU frites vendues seules.
+        if (drink || isDrinkName(item.name) || isFries(item.name)) continue;
+        item.basePrice = markupPrice(item.basePrice);
+        final mp = item.menuPrice;
+        if (mp != null) item.menuPrice = markupPrice(mp);
+        for (var i = 0; i < item.sizes.length; i++) {
+          final e = item.sizes[i];
+          item.sizes[i] = MapEntry(e.key, markupPrice(e.value));
+        }
+      }
+    }
+  }
+
+  /// Prix brut (aucune marge) : la grille est désormais appliquée en une passe
+  /// unique par [applyPricingGrid], après le parsing.
   static int _toInt(String raw) {
     final digits = raw.replaceAll(RegExp(r'[^\d]'), '');
-    return markupPrice(int.tryParse(digits) ?? 0);
+    return int.tryParse(digits) ?? 0;
   }
 }

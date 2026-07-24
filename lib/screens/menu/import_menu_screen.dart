@@ -96,6 +96,9 @@ class _ImportMenuScreenState extends State<ImportMenuScreen> {
     // JSON standard d'abord (déterministe), sinon parser texte heuristique.
     final raw = _textController.text;
     final parsed = MenuJsonParser.tryParse(raw) ?? MenuParser.parse(raw);
+    // Grille tarifaire : marge par tranche, appliquée aux SEULS plats principaux
+    // (boissons, frites et choix d'options gardent le prix brut resto).
+    MenuParser.applyPricingGrid(parsed);
     setState(() {
       _parsed = parsed;
       _categoryImages.clear();
