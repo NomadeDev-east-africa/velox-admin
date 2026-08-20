@@ -148,6 +148,8 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
         final isOnline = data['isOnline'] ?? data['is_online'] ?? false;
         final isAvailable =
             data['isAvailable'] ?? data['is_available'] ?? false;
+        final isActive = data['isActive'] ?? true;
+        final name = (data['name'] ?? '').toString();
 
         return Card(
           margin: const EdgeInsets.only(bottom: defaultPadding),
@@ -189,7 +191,7 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
                   ),
               ],
             ),
-            title: Text(data['name'] ?? 'N/A'),
+            title: Text(name.isEmpty ? 'N/A' : name),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -207,6 +209,11 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
                     ),
                   ],
                 ),
+                if (!isActive)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: _statusBadge('Bloqué', errorColor),
+                  ),
               ],
             ),
             trailing: PopupMenuButton(
@@ -218,6 +225,18 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
                       Icon(Icons.edit, size: 18),
                       SizedBox(width: 8),
                       Text('Modifier'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'toggle',
+                  child: Row(
+                    children: [
+                      Icon(isActive ? Icons.block : Icons.check_circle,
+                          size: 18,
+                          color: isActive ? errorColor : successColor),
+                      const SizedBox(width: 8),
+                      Text(isActive ? 'Bloquer' : 'Débloquer'),
                     ],
                   ),
                 ),
@@ -235,6 +254,8 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
               onSelected: (value) {
                 if (value == 'edit') {
                   _navigateToEditLivreur(livreurs[index].id, data);
+                } else if (value == 'toggle') {
+                  _confirmToggleActive(livreurs[index].id, name, isActive);
                 } else if (value == 'delete') {
                   _confirmDelete(livreurs[index].id, data['name']);
                 }
@@ -254,126 +275,144 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
-          columnSpacing: 24,
-          columns: const [
-            DataColumn(label: Text('Actions')),
-            DataColumn(label: Text('Statut')),
-            DataColumn(label: Text('Photo')),
-            DataColumn(label: Text('Nom')),
-            DataColumn(label: Text('Téléphone')),
-            DataColumn(label: Text('Plaque Moto')),
-            DataColumn(label: Text('Livraisons')),
-            DataColumn(label: Text('Note')),
-          ],
-          rows: livreurs.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
+            columnSpacing: 24,
+            columns: const [
+              DataColumn(label: Text('Actions')),
+              DataColumn(label: Text('Statut')),
+              DataColumn(label: Text('Photo')),
+              DataColumn(label: Text('Nom')),
+              DataColumn(label: Text('Téléphone')),
+              DataColumn(label: Text('Plaque Moto')),
+              DataColumn(label: Text('Livraisons')),
+              DataColumn(label: Text('Note')),
+            ],
+            rows: livreurs.map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
 
-            final isOnline = data['isOnline'] ?? data['is_online'] ?? false;
-            final isAvailable =
-                data['isAvailable'] ?? data['is_available'] ?? false;
+              final isOnline = data['isOnline'] ?? data['is_online'] ?? false;
+              final isAvailable =
+                  data['isAvailable'] ?? data['is_available'] ?? false;
+              final isActive = data['isActive'] ?? true;
+              final name = (data['name'] ?? '').toString();
 
-            return DataRow(cells: [
-              // Actions (en 1re colonne pour être toujours visibles)
-              DataCell(
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.edit, size: 20, color: primaryColor),
-                      onPressed: () => _navigateToEditLivreur(doc.id, data),
-                      tooltip: 'Modifier',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete, size: 20, color: errorColor),
-                      onPressed: () => _confirmDelete(doc.id, data['name']),
-                      tooltip: 'Supprimer',
-                    ),
-                  ],
-                ),
-              ),
-              // Statut
-              DataCell(
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: isOnline
-                            ? (isAvailable ? Colors.green : Colors.orange)
-                            : Colors.grey,
-                        shape: BoxShape.circle,
+              return DataRow(cells: [
+                // Actions (en 1re colonne pour être toujours visibles)
+                DataCell(
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit,
+                            size: 20, color: primaryColor),
+                        onPressed: () => _navigateToEditLivreur(doc.id, data),
+                        tooltip: 'Modifier',
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      isOnline
-                          ? (isAvailable ? 'Dispo' : 'Occupé')
-                          : 'Offline',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isOnline
-                            ? (isAvailable ? Colors.green : Colors.orange)
-                            : Colors.grey,
-                        fontWeight: FontWeight.w500,
+                      IconButton(
+                        icon: Icon(isActive ? Icons.block : Icons.check_circle,
+                            size: 20,
+                            color: isActive ? errorColor : successColor),
+                        onPressed: () =>
+                            _confirmToggleActive(doc.id, name, isActive),
+                        tooltip: isActive ? 'Bloquer' : 'Débloquer',
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              // Photo
-              DataCell(
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: Colors.orange,
-                  child: ClipOval(
-                    child: data['photoUrl'] != null
-                        ? Image.network(
-                            data['photoUrl'],
-                            width: 32,
-                            height: 32,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(
-                              Icons.delivery_dining,
-                              size: 16,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.delivery_dining,
-                            size: 16, color: Colors.white),
+                      IconButton(
+                        icon: const Icon(Icons.delete,
+                            size: 20, color: errorColor),
+                        onPressed: () => _confirmDelete(doc.id, data['name']),
+                        tooltip: 'Supprimer',
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              // Nom
-              DataCell(Text(data['name'] ?? 'N/A')),
-              // Téléphone
-              DataCell(Text(data['phone'] ?? 'N/A')),
-              // Plaque
-              DataCell(
-                Row(
-                  children: [
-                    const Icon(Icons.motorcycle, size: 16),
-                    const SizedBox(width: 4),
-                    Text(data['licensePlate'] ?? 'N/A'),
-                  ],
+                // Statut
+                DataCell(
+                  !isActive
+                      ? _statusBadge('Bloqué', errorColor)
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: isOnline
+                                    ? (isAvailable
+                                        ? Colors.green
+                                        : Colors.orange)
+                                    : Colors.grey,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              isOnline
+                                  ? (isAvailable ? 'Dispo' : 'Occupé')
+                                  : 'Offline',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isOnline
+                                    ? (isAvailable
+                                        ? Colors.green
+                                        : Colors.orange)
+                                    : Colors.grey,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
                 ),
-              ),
-              // Livraisons
-              DataCell(
-                  Text('${data['totalDeliveries'] ?? data['total_deliveries'] ?? 0}')),
-              // Note
-              DataCell(
-                Row(
-                  children: [
-                    const Icon(Icons.star, size: 16, color: warningColor),
-                    const SizedBox(width: 4),
-                    Text((data['rating'] ?? 5.0).toStringAsFixed(1)),
-                  ],
+                // Photo
+                DataCell(
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundColor: Colors.orange,
+                    child: ClipOval(
+                      child: data['photoUrl'] != null
+                          ? Image.network(
+                              data['photoUrl'],
+                              width: 32,
+                              height: 32,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.delivery_dining,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.delivery_dining,
+                              size: 16, color: Colors.white),
+                    ),
+                  ),
                 ),
-              ),
-            ]);
-          }).toList(),
+                // Nom
+                DataCell(Text(data['name'] ?? 'N/A')),
+                // Téléphone
+                DataCell(Text(data['phone'] ?? 'N/A')),
+                // Plaque
+                DataCell(
+                  Row(
+                    children: [
+                      const Icon(Icons.motorcycle, size: 16),
+                      const SizedBox(width: 4),
+                      Text(data['licensePlate'] ?? 'N/A'),
+                    ],
+                  ),
+                ),
+                // Livraisons
+                DataCell(Text(
+                    '${data['totalDeliveries'] ?? data['total_deliveries'] ?? 0}')),
+                // Note
+                DataCell(
+                  Row(
+                    children: [
+                      const Icon(Icons.star, size: 16, color: warningColor),
+                      const SizedBox(width: 4),
+                      Text((data['rating'] ?? 5.0).toStringAsFixed(1)),
+                    ],
+                  ),
+                ),
+              ]);
+            }).toList(),
           ),
         ),
       ),
@@ -420,6 +459,73 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
   }
 
   // Confirmer suppression
+  Widget _statusBadge(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color),
+      ),
+      child: Text(
+        label,
+        style:
+            TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  // Bloquer/débloquer un livreur (compte désactivé côté admin)
+  Future<void> _confirmToggleActive(
+      String livreurId, String livreurName, bool currentlyActive) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+            currentlyActive ? 'Bloquer le livreur' : 'Débloquer le livreur'),
+        content: Text(currentlyActive
+            ? 'Voulez-vous vraiment bloquer $livreurName ? Il ne pourra plus se connecter ni recevoir de commandes.'
+            : 'Voulez-vous vraiment débloquer $livreurName ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+                foregroundColor: currentlyActive ? errorColor : successColor),
+            child: Text(currentlyActive ? 'Bloquer' : 'Débloquer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await _firestore.collection('livreurs').doc(livreurId).update({
+          'isActive': !currentlyActive,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content:
+                  Text(currentlyActive ? 'Livreur bloqué' : 'Livreur débloqué'),
+              backgroundColor: successColor,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur: $e'), backgroundColor: errorColor),
+          );
+        }
+      }
+    }
+  }
+
   Future<void> _confirmDelete(String livreurId, String livreurName) async {
     final confirm = await showDialog<bool>(
       context: context,

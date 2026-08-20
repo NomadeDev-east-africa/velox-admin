@@ -331,8 +331,13 @@ class MenuParser {
       ? w
       : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}';
 
-  /// Grille tarifaire : marge FIXE ajoutée au prix brut resto, par tranche de
-  /// prix. Remplace l'ancien +10 %. Un prix nul (non renseigné) reste nul.
+  /// Grille tarifaire : marge FIXE ajoutée au prix, par tranche. Remplace
+  /// l'ancien +10 %. Un prix nul (non renseigné) reste nul.
+  ///
+  /// RÈGLE UNIQUE, appliquée à **TOUS les articles sans exception** (plats,
+  /// sauces, suppléments, ingrédients, boissons, frites…) :
+  /// - **< 300 FDJ → +0** (aucune commission)
+  /// - **≥ 300 FDJ → marge de la tranche** ci-dessous.
   ///
   /// | Tranche (brut)  | Marge |
   /// |---|---|
@@ -356,9 +361,9 @@ class MenuParser {
   /// seuil suivant) : un prix « entre deux tranches » (750, 1375…) reçoit la
   /// marge de la tranche inférieure, jamais 0.
   ///
-  /// ⚠️ Ne s'applique qu'aux **plats principaux** (via [applyPricingGrid]). Les
-  /// boissons, les frites et TOUS les choix d'options (sauces, extras,
-  /// suppléments) gardent leur prix brut : ils ne passent jamais par ici.
+  /// Appliquée à chaque prix dès le parsing (via [_toInt]) : les sauces,
+  /// suppléments et ingrédients étant presque toujours < 300, ils restent
+  /// naturellement à 0 commission.
   static int markupPrice(int raw) {
     if (raw <= 0) return raw;
     return raw + _margin(raw);
@@ -382,60 +387,11 @@ class MenuParser {
     return 2500;
   }
 
-  /// Catégories « boisson » exclues de la marge (mais PAS les desserts ni les
-  /// glaces, qui sont de la nourriture et suivent la grille).
-  static final _drinkCategoryRegex = RegExp(
-    r'boisson|jus|cocktail|smoothie|milk\s*shake|frappe|soda|limonade'
-    r'|soft|th[ée]|infusion|caf[ée]|\beau\b',
-    caseSensitive: false,
-  );
-
-  /// Boissons reconnues par leur **nom** (filet de sécurité si la catégorie n'a
-  /// pas un nom « boisson » explicite). Couvre les marques courantes à Djibouti.
-  static final _drinkNameRegex = RegExp(
-    r'\b(coca|cola|pepsi|fanta|sprite|mizone?|mizo|grenadine|oasis|schweppes'
-    r'|red\s*bull|redbull|soda|limonade|ice\s*tea|ice-?tea|th[ée]\s*glac|perrier'
-    r'|san\s*pellegrino|vittel|evian|ambo|smoothie|milk\s*shake|frapp[ée])\b',
-    caseSensitive: false,
-  );
-
-  /// Frites vendues seules (accompagnement) : exclues de la marge. On exige que
-  /// le nom COMMENCE par « frite(s) » pour ne pas capturer un plat composé
-  /// (« Poulet frites » garde la marge). Reste corrigeable dans l'aperçu.
-  static final _friesRegex =
-      RegExp(r'^\s*frites?\b', caseSensitive: false);
-
-  static bool isDrinkCategory(String name) =>
-      _drinkCategoryRegex.hasMatch(name);
-  static bool isDrinkName(String name) => _drinkNameRegex.hasMatch(name);
-  static bool isFries(String name) => _friesRegex.hasMatch(name);
-
-  /// Applique la grille tarifaire à un [ParsedMenu] tout juste parsé (prix
-  /// bruts). Majoré : prix de base, formule menu et prix par taille des **plats
-  /// principaux**. Conservé au prix brut : les catégories boisson, les frites,
-  /// et tous les choix d'options (jamais touchés ici).
-  static void applyPricingGrid(ParsedMenu menu) {
-    for (final cat in menu.categories) {
-      final drink = isDrinkCategory(cat.name);
-      for (final item in cat.items) {
-        // Prix brut conservé : catégorie boisson, OU nom de boisson (filet de
-        // sécurité), OU frites vendues seules.
-        if (drink || isDrinkName(item.name) || isFries(item.name)) continue;
-        item.basePrice = markupPrice(item.basePrice);
-        final mp = item.menuPrice;
-        if (mp != null) item.menuPrice = markupPrice(mp);
-        for (var i = 0; i < item.sizes.length; i++) {
-          final e = item.sizes[i];
-          item.sizes[i] = MapEntry(e.key, markupPrice(e.value));
-        }
-      }
-    }
-  }
-
-  /// Prix brut (aucune marge) : la grille est désormais appliquée en une passe
-  /// unique par [applyPricingGrid], après le parsing.
+  /// Prix majoré selon la grille [markupPrice]. Appliqué à CHAQUE prix, y
+  /// compris les choix d'options — la règle « < 300 → +0 » les exempte
+  /// d'elle-même.
   static int _toInt(String raw) {
     final digits = raw.replaceAll(RegExp(r'[^\d]'), '');
-    return int.tryParse(digits) ?? 0;
+    return markupPrice(int.tryParse(digits) ?? 0);
   }
 }

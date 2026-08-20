@@ -47,9 +47,9 @@ suppléments. Rien n'est écrit en base tant qu'on n'a pas cliqué *Importer*.
 - **Tous les prix sont des entiers en FDJ** — pas de symbole, pas de décimale, pas
   d'espace (`1500`, pas `1 500 FDJ`).
 - **Les prix du JSON sont les prix BRUTS du restaurant.** À l'import, une **grille
-  tarifaire** ajoute une marge par tranche de prix (voir ci-dessous), mais
-  **uniquement sur les plats principaux**. Ne pré-calcule jamais la marge dans le
-  JSON.
+  tarifaire** ajoute une marge par tranche de prix (voir ci-dessous), appliquée à
+  **chaque article** (tout prix < 300 FDJ : aucune marge). Ne pré-calcule jamais la
+  marge dans le JSON.
 - **`categories`** : liste qui fixe l'ordre d'affichage des catégories.
 - **`menu`** : un objet dont chaque clé est un **nom de catégorie**, sauf la clé
   spéciale **`supplements`** (voir plus bas).
@@ -96,9 +96,9 @@ déclare via un tableau **`options`** — utilisable sur **n'importe quel** plat
 - `maxChoices` : plafond de sélections pour un groupe `multiple` (ex. Tacos XL → `2`,
   Tacos XXL → `3`). Absent ou `0` = illimité. Ignoré pour un groupe `single` (= 1).
 - `choix` : liste d'objets `{ "nom", "prix" }` (ou de simples chaînes → prix 0).
-- `prix` d'un choix = **supplément** ajouté au prix de base (`0` = inclus). Un choix
-  d'option **ne reçoit AUCUNE marge** : sauces, extras et suppléments sont vendus au
-  prix brut resto (voir la grille tarifaire).
+- `prix` d'un choix = **supplément** ajouté au prix de base (`0` = inclus). La grille
+  tarifaire s'applique aussi aux choix d'options, mais comme sauces/suppléments/
+  ingrédients sont presque toujours < 300 FDJ, ils restent de fait à **0 marge**.
 - Ordre d'affichage des groupes : Taille (si tailles) → Formule (si `prix_menu`) → `options`.
 - Une **boisson incluse** dans un menu se déclare comme un groupe `single` à `prix 0`
   (ex. `{ "nom": "Boissons", "type": "single", "choix": [ {"nom":"Coca","prix":0}, … ] }`).
@@ -155,20 +155,20 @@ suivant, aucun prix ne « tombe dans un trou ».
 | 20000 – 29999 | +2000 |
 | ≥ 30000 | +2500 |
 
-**La marge ne s'applique qu'aux PLATS PRINCIPAUX** (prix de base, formule menu, prix
-par taille). Sont vendus au **prix brut, sans aucune marge** :
+**RÈGLE UNIQUE : la marge s'applique à TOUS les articles sans exception** — plats,
+sauces, suppléments, ingrédients, boissons, frites. Le seul critère est le prix :
 
-- toute la **catégorie boisson** (boissons, jus, cocktails, cafés, thés, eau,
-  smoothies… — mais **pas** les desserts ni les glaces, qui sont de la nourriture) ;
-- toute **boisson reconnue par son nom** (coca, fanta, sprite, mizo, grenadine,
-  perrier…), même si elle est rangée dans une catégorie mal nommée — filet de sécurité ;
-- les **frites** vendues seules (nom commençant par « frite ») ;
-- **tous les choix d'options** : sauces, extras, suppléments.
+- **tout article < 300 FDJ → 0 marge** (donc sauces, suppléments et ingrédients, quasi
+  toujours < 300, restent naturellement à 0) ;
+- **tout article ≥ 300 FDJ → marge de la tranche** ci-dessus.
 
-> Implémentation : `MenuParser.markupPrice` (la grille) + `MenuParser.applyPricingGrid`
-> (la passe qui distingue plat / boisson / frite / option), appelée une seule fois
-> dans `import_menu_screen.dart`. La classification boisson/frite est **corrigeable
-> dans l'aperçu** avant import.
+> Conséquence : un article ≥ 300 qui n'est pas un plat (milkshake à 750, gros jus à
+> 500, frites vendues 500…) reçoit **aussi** la marge. Il n'y a plus d'exception par
+> catégorie ou par type.
+
+> Implémentation : `MenuParser.markupPrice` (la grille), appliquée à **chaque prix**
+> dès le parsing (via `_toInt` dans les deux parsers). L'aperçu reste modifiable avant
+> import.
 
 ### Exemple complet réel
 

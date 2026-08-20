@@ -14,7 +14,7 @@
     ],
     "headers": [
       {
-        "source": "**/*.@(js|css|wasm|json|png|jpg|jpeg|gif|svg|woff|woff2|ttf|otf)",
+        "source": "**/*.@(css|wasm|png|jpg|jpeg|gif|svg|woff|woff2|ttf|otf)",
         "headers": [
           {
             "key": "Cache-Control",
@@ -23,20 +23,20 @@
         ]
       },
       {
-        "source": "/index.html",
+        "source": "**/*.@(js|json)",
         "headers": [
           {
             "key": "Cache-Control",
-            "value": "no-cache, no-store, must-revalidate"
+            "value": "no-cache"
           }
         ]
       },
       {
-        "source": "/flutter_service_worker.js",
+        "source": "/index.html",
         "headers": [
           {
             "key": "Cache-Control",
-            "value": "no-cache, no-store, must-revalidate"
+            "value": "no-cache"
           }
         ]
       }

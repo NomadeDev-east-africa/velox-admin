@@ -46,7 +46,8 @@ class _DriversListScreenState extends State<DriversListScreen> {
               ElevatedButton.icon(
                 onPressed: () => _navigateToAddDriver(),
                 icon: const Icon(Icons.add),
-                label: Text(isMobile(context) ? 'Ajouter' : 'Ajouter Chauffeur'),
+                label:
+                    Text(isMobile(context) ? 'Ajouter' : 'Ajouter Chauffeur'),
               ),
             ],
           ),
@@ -77,8 +78,8 @@ class _DriversListScreenState extends State<DriversListScreen> {
                   final phone = (data['phone'] ?? '').toString().toLowerCase();
                   final email = (data['email'] ?? '').toString().toLowerCase();
                   return name.contains(_searchQuery) ||
-                         phone.contains(_searchQuery) ||
-                         email.contains(_searchQuery);
+                      phone.contains(_searchQuery) ||
+                      email.contains(_searchQuery);
                 }).toList();
               }
 
@@ -87,7 +88,8 @@ class _DriversListScreenState extends State<DriversListScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.people_outline, size: 64, color: Colors.grey.shade400),
+                      Icon(Icons.people_outline,
+                          size: 64, color: Colors.grey.shade400),
                       const SizedBox(height: 16),
                       Text(
                         _searchQuery.isEmpty
@@ -118,10 +120,13 @@ class _DriversListScreenState extends State<DriversListScreen> {
       itemCount: drivers.length,
       itemBuilder: (context, index) {
         final data = drivers[index].data() as Map<String, dynamic>;
-        
+
         // ✅ VERSION CORRIGÉE - lecture uniquement camelCase
-        final isOnline = data['isOnline'] ?? false;  // Plus besoin de fallback snake_case
-        
+        final isOnline =
+            data['isOnline'] ?? false; // Plus besoin de fallback snake_case
+        final isActive = data['isActive'] ?? true;
+        final name = (data['name'] ?? '').toString();
+
         return Card(
           margin: const EdgeInsets.only(bottom: defaultPadding),
           child: ListTile(
@@ -129,15 +134,20 @@ class _DriversListScreenState extends State<DriversListScreen> {
               backgroundColor: isOnline == true ? successColor : Colors.grey,
               child: const Icon(Icons.person, color: Colors.white),
             ),
-            title: Text(data['name'] ?? 'N/A'),
+            title: Text(name.isEmpty ? 'N/A' : name),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(data['phone'] ?? ''),
                 Text(
-                  data['vehicleType'] ?? 'N/A',  // ✅ camelCase uniquement
+                  data['vehicleType'] ?? 'N/A', // ✅ camelCase uniquement
                   style: const TextStyle(fontSize: 12),
                 ),
+                if (!isActive)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: _statusBadge('Bloqué', errorColor),
+                  ),
               ],
             ),
             trailing: PopupMenuButton(
@@ -145,6 +155,18 @@ class _DriversListScreenState extends State<DriversListScreen> {
                 const PopupMenuItem(
                   value: 'edit',
                   child: Text('Modifier'),
+                ),
+                PopupMenuItem(
+                  value: 'toggle',
+                  child: Row(
+                    children: [
+                      Icon(isActive ? Icons.block : Icons.check_circle,
+                          size: 18,
+                          color: isActive ? errorColor : successColor),
+                      const SizedBox(width: 8),
+                      Text(isActive ? 'Bloquer' : 'Débloquer'),
+                    ],
+                  ),
                 ),
                 const PopupMenuItem(
                   value: 'delete',
@@ -154,6 +176,8 @@ class _DriversListScreenState extends State<DriversListScreen> {
               onSelected: (value) {
                 if (value == 'edit') {
                   _navigateToEditDriver(drivers[index].id, data);
+                } else if (value == 'toggle') {
+                  _confirmToggleActive(drivers[index].id, name, isActive);
                 } else if (value == 'delete') {
                   _confirmDelete(drivers[index].id, data['name']);
                 }
@@ -173,68 +197,83 @@ class _DriversListScreenState extends State<DriversListScreen> {
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
-          columnSpacing: 24,
-          columns: const [
-            DataColumn(label: Text('Actions')),
-            DataColumn(label: Text('Statut')),
-            DataColumn(label: Text('Nom')),
-            DataColumn(label: Text('Téléphone')),
-            DataColumn(label: Text('Email')),
-            DataColumn(label: Text('Véhicule')),
-            DataColumn(label: Text('Courses')),
-            DataColumn(label: Text('Note')),
-          ],
-          rows: drivers.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            
-            // ✅ VERSION CORRIGÉE - lecture uniquement camelCase
-            final isOnline = data['isOnline'] ?? false;
-            
-            return DataRow(cells: [
-              // Actions (en 1re colonne pour être toujours visibles)
-              DataCell(
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.edit, size: 20, color: primaryColor),
-                      onPressed: () => _navigateToEditDriver(doc.id, data),
-                      tooltip: 'Modifier',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete, size: 20, color: errorColor),
-                      onPressed: () => _confirmDelete(doc.id, data['name']),
-                      tooltip: 'Supprimer',
-                    ),
-                  ],
-                ),
-              ),
-              DataCell(
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: isOnline == true ? successColor : Colors.grey,
-                    shape: BoxShape.circle,
+            columnSpacing: 24,
+            columns: const [
+              DataColumn(label: Text('Actions')),
+              DataColumn(label: Text('Statut')),
+              DataColumn(label: Text('Nom')),
+              DataColumn(label: Text('Téléphone')),
+              DataColumn(label: Text('Email')),
+              DataColumn(label: Text('Véhicule')),
+              DataColumn(label: Text('Courses')),
+              DataColumn(label: Text('Note')),
+            ],
+            rows: drivers.map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+
+              // ✅ VERSION CORRIGÉE - lecture uniquement camelCase
+              final isOnline = data['isOnline'] ?? false;
+              final isActive = data['isActive'] ?? true;
+              final name = (data['name'] ?? '').toString();
+
+              return DataRow(cells: [
+                // Actions (en 1re colonne pour être toujours visibles)
+                DataCell(
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit,
+                            size: 20, color: primaryColor),
+                        onPressed: () => _navigateToEditDriver(doc.id, data),
+                        tooltip: 'Modifier',
+                      ),
+                      IconButton(
+                        icon: Icon(isActive ? Icons.block : Icons.check_circle,
+                            size: 20,
+                            color: isActive ? errorColor : successColor),
+                        onPressed: () =>
+                            _confirmToggleActive(doc.id, name, isActive),
+                        tooltip: isActive ? 'Bloquer' : 'Débloquer',
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete,
+                            size: 20, color: errorColor),
+                        onPressed: () => _confirmDelete(doc.id, data['name']),
+                        tooltip: 'Supprimer',
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              DataCell(Text(data['name'] ?? 'N/A')),
-              DataCell(Text(data['phone'] ?? 'N/A')),
-              DataCell(Text(data['email'] ?? 'N/A')),
-              DataCell(Text(data['vehicleType'] ?? 'N/A')),  // ✅ camelCase
-              DataCell(Text('${data['totalRides'] ?? 0}')),  // ✅ camelCase
-              DataCell(
-                Row(
-                  children: [
-                    const Icon(Icons.star, size: 16, color: warningColor),
-                    const SizedBox(width: 4),
-                    Text((data['rating'] ?? 0.0).toStringAsFixed(1)),
-                  ],
+                DataCell(
+                  !isActive
+                      ? _statusBadge('Bloqué', errorColor)
+                      : Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color:
+                                isOnline == true ? successColor : Colors.grey,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
                 ),
-              ),
-            ]);
-          }).toList(),
+                DataCell(Text(data['name'] ?? 'N/A')),
+                DataCell(Text(data['phone'] ?? 'N/A')),
+                DataCell(Text(data['email'] ?? 'N/A')),
+                DataCell(Text(data['vehicleType'] ?? 'N/A')), // ✅ camelCase
+                DataCell(Text('${data['totalRides'] ?? 0}')), // ✅ camelCase
+                DataCell(
+                  Row(
+                    children: [
+                      const Icon(Icons.star, size: 16, color: warningColor),
+                      const SizedBox(width: 4),
+                      Text((data['rating'] ?? 0.0).toStringAsFixed(1)),
+                    ],
+                  ),
+                ),
+              ]);
+            }).toList(),
           ),
         ),
       ),
@@ -265,8 +304,7 @@ class _DriversListScreenState extends State<DriversListScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) =>
-            EditDriverScreen(driverId: driverId, data: data),
+        builder: (context) => EditDriverScreen(driverId: driverId, data: data),
       ),
     ).then((success) {
       if (success == true && mounted) {
@@ -278,6 +316,74 @@ class _DriversListScreenState extends State<DriversListScreen> {
         );
       }
     });
+  }
+
+  Widget _statusBadge(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color),
+      ),
+      child: Text(
+        label,
+        style:
+            TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  // Bloquer/débloquer un chauffeur (compte désactivé côté admin)
+  Future<void> _confirmToggleActive(
+      String driverId, String driverName, bool currentlyActive) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(currentlyActive
+            ? 'Bloquer le chauffeur'
+            : 'Débloquer le chauffeur'),
+        content: Text(currentlyActive
+            ? 'Voulez-vous vraiment bloquer $driverName ? Il ne pourra plus se connecter ni accepter de courses.'
+            : 'Voulez-vous vraiment débloquer $driverName ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+                foregroundColor: currentlyActive ? errorColor : successColor),
+            child: Text(currentlyActive ? 'Bloquer' : 'Débloquer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await _firestore.collection('drivers').doc(driverId).update({
+          'isActive': !currentlyActive,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  currentlyActive ? 'Chauffeur bloqué' : 'Chauffeur débloqué'),
+              backgroundColor: successColor,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur: $e'), backgroundColor: errorColor),
+          );
+        }
+      }
+    }
   }
 
   // Confirmer suppression
@@ -304,7 +410,7 @@ class _DriversListScreenState extends State<DriversListScreen> {
     if (confirm == true) {
       try {
         await _firestore.collection('drivers').doc(driverId).delete();
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(

@@ -12,7 +12,14 @@ class UsersScreen extends StatefulWidget {
 
 class _UsersScreenState extends State<UsersScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final ScrollController _horizontalController = ScrollController();
   String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _horizontalController.dispose();
+    super.dispose();
+  }
 
   DateTime? _parseDate(dynamic value) {
     if (value == null) return null;
@@ -64,10 +71,10 @@ class _UsersScreenState extends State<UsersScreen> {
 
               // Tri par date d'inscription décroissante (du plus récent au plus ancien)
               docs.sort((a, b) {
-                final da = _parseDate(
-                    (a.data() as Map<String, dynamic>)['createdAt']);
-                final db = _parseDate(
-                    (b.data() as Map<String, dynamic>)['createdAt']);
+                final da =
+                    _parseDate((a.data() as Map<String, dynamic>)['createdAt']);
+                final db =
+                    _parseDate((b.data() as Map<String, dynamic>)['createdAt']);
                 if (da == null && db == null) return 0;
                 if (da == null) return 1;
                 if (db == null) return -1;
@@ -77,12 +84,13 @@ class _UsersScreenState extends State<UsersScreen> {
               if (_searchQuery.isNotEmpty) {
                 docs = docs.where((d) {
                   final data = d.data() as Map<String, dynamic>;
-                  final name =
-                      (data['name'] ?? data['displayName'] ?? '').toString().toLowerCase();
-                  final phone =
-                      (data['phone'] ?? data['phoneNumber'] ?? '').toString().toLowerCase();
-                  final email =
-                      (data['email'] ?? '').toString().toLowerCase();
+                  final name = (data['name'] ?? data['displayName'] ?? '')
+                      .toString()
+                      .toLowerCase();
+                  final phone = (data['phone'] ?? data['phoneNumber'] ?? '')
+                      .toString()
+                      .toLowerCase();
+                  final email = (data['email'] ?? '').toString().toLowerCase();
                   return name.contains(_searchQuery) ||
                       phone.contains(_searchQuery) ||
                       email.contains(_searchQuery);
@@ -125,6 +133,7 @@ class _UsersScreenState extends State<UsersScreen> {
         final phone = data['phone'] ?? data['phoneNumber'] ?? 'N/A';
         final email = data['email'] ?? 'N/A';
         final photoUrl = data['photoUrl'] ?? data['photoURL'];
+        final isActive = data['isActive'] ?? true;
         final createdAt = data['createdAt'] != null
             ? _formatDate(data['createdAt'], pattern: 'dd/MM/yyyy')
             : 'N/A';
@@ -132,10 +141,10 @@ class _UsersScreenState extends State<UsersScreen> {
         return Card(
           margin: const EdgeInsets.only(bottom: defaultPadding),
           child: ListTile(
+            onTap: () => _showUserDetails(docs[i].id, data),
             leading: CircleAvatar(
               backgroundColor: primaryColor,
-              backgroundImage:
-                  photoUrl != null ? NetworkImage(photoUrl) : null,
+              backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null,
               child: photoUrl == null
                   ? Text(
                       name.isNotEmpty ? name[0].toUpperCase() : '?',
@@ -143,22 +152,50 @@ class _UsersScreenState extends State<UsersScreen> {
                     )
                   : null,
             ),
-            title: Text(name,
-                style: const TextStyle(fontWeight: FontWeight.w600)),
+            title:
+                Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(phone),
                 Text(email, style: const TextStyle(fontSize: 12)),
                 Text('Inscrit le $createdAt',
-                    style: TextStyle(
-                        fontSize: 11, color: Colors.grey.shade500)),
+                    style:
+                        TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                if (!isActive)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: _statusBadge('Bloqué', errorColor),
+                  ),
               ],
             ),
             isThreeLine: true,
+            trailing: IconButton(
+              icon: Icon(isActive ? Icons.block : Icons.check_circle,
+                  color: isActive ? errorColor : successColor),
+              tooltip: isActive ? 'Bloquer' : 'Débloquer',
+              onPressed: () =>
+                  _confirmToggleActive(docs[i].id, name.toString(), isActive),
+            ),
           ),
         );
       },
+    );
+  }
+
+  Widget _statusBadge(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color),
+      ),
+      child: Text(
+        label,
+        style:
+            TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
+      ),
     );
   }
 
@@ -166,55 +203,82 @@ class _UsersScreenState extends State<UsersScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(defaultPadding),
       child: Card(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-          columns: const [
-            DataColumn(label: Text('Photo')),
-            DataColumn(label: Text('Nom')),
-            DataColumn(label: Text('Téléphone')),
-            DataColumn(label: Text('Email')),
-            DataColumn(label: Text('Inscription')),
-            DataColumn(label: Text('Actions')),
-          ],
-          rows: docs.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            final name = data['name'] ?? data['displayName'] ?? 'N/A';
-            final phone = data['phone'] ?? data['phoneNumber'] ?? 'N/A';
-            final email = data['email'] ?? 'N/A';
-            final photoUrl = data['photoUrl'] ?? data['photoURL'];
-            final createdAt = _formatDate(data['createdAt'], pattern: 'dd/MM/yyyy');
+        child: Scrollbar(
+          controller: _horizontalController,
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            controller: _horizontalController,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(bottom: 12),
+            child: DataTable(
+              columnSpacing: 24,
+              horizontalMargin: 16,
+              columns: const [
+                DataColumn(label: Text('Photo')),
+                DataColumn(label: Text('Nom')),
+                DataColumn(label: Text('Téléphone')),
+                DataColumn(label: Text('Email')),
+                DataColumn(label: Text('Statut')),
+                DataColumn(label: Text('Inscription')),
+                DataColumn(label: Text('Actions')),
+              ],
+              rows: docs.map((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                final name = data['name'] ?? data['displayName'] ?? 'N/A';
+                final phone = data['phone'] ?? data['phoneNumber'] ?? 'N/A';
+                final email = data['email'] ?? 'N/A';
+                final photoUrl = data['photoUrl'] ?? data['photoURL'];
+                final isActive = data['isActive'] ?? true;
+                final createdAt =
+                    _formatDate(data['createdAt'], pattern: 'dd/MM/yyyy');
 
-            return DataRow(cells: [
-              // Photo
-              DataCell(
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: primaryColor,
-                  backgroundImage:
-                      photoUrl != null ? NetworkImage(photoUrl) : null,
-                  child: photoUrl == null
-                      ? Text(
-                          name.isNotEmpty ? name[0].toUpperCase() : '?',
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 12),
-                        )
-                      : null,
-                ),
-              ),
-              DataCell(Text(name)),
-              DataCell(Text(phone)),
-              DataCell(Text(email)),
-              DataCell(Text(createdAt)),
-              DataCell(
-                IconButton(
-                  icon: const Icon(Icons.visibility, size: 20),
-                  onPressed: () => _showUserDetails(doc.id, data),
-                  tooltip: 'Voir détails',
-                ),
-              ),
-            ]);
-          }).toList(),
+                return DataRow(cells: [
+                  // Photo
+                  DataCell(
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundColor: primaryColor,
+                      backgroundImage:
+                          photoUrl != null ? NetworkImage(photoUrl) : null,
+                      child: photoUrl == null
+                          ? Text(
+                              name.isNotEmpty ? name[0].toUpperCase() : '?',
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 12),
+                            )
+                          : null,
+                    ),
+                  ),
+                  DataCell(Text(name)),
+                  DataCell(Text(phone)),
+                  DataCell(Text(email)),
+                  DataCell(_statusBadge(isActive ? 'Actif' : 'Bloqué',
+                      isActive ? successColor : errorColor)),
+                  DataCell(Text(createdAt)),
+                  DataCell(
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.visibility, size: 20),
+                          onPressed: () => _showUserDetails(doc.id, data),
+                          tooltip: 'Voir détails',
+                        ),
+                        IconButton(
+                          icon: Icon(
+                              isActive ? Icons.block : Icons.check_circle,
+                              size: 20,
+                              color: isActive ? errorColor : successColor),
+                          tooltip: isActive ? 'Bloquer' : 'Débloquer',
+                          onPressed: () => _confirmToggleActive(
+                              doc.id, name.toString(), isActive),
+                        ),
+                      ],
+                    ),
+                  ),
+                ]);
+              }).toList(),
+            ),
           ),
         ),
       ),
@@ -225,6 +289,7 @@ class _UsersScreenState extends State<UsersScreen> {
     final name = data['name'] ?? data['displayName'] ?? 'N/A';
     final phone = data['phone'] ?? data['phoneNumber'] ?? 'N/A';
     final email = data['email'] ?? 'N/A';
+    final isActive = data['isActive'] ?? true;
 
     showDialog(
       context: context,
@@ -245,6 +310,7 @@ class _UsersScreenState extends State<UsersScreen> {
               _detailRow('Nom', name),
               _detailRow('Téléphone', phone),
               _detailRow('Email', email),
+              _detailRow('Statut', isActive ? 'Actif' : 'Bloqué'),
               if (data['createdAt'] != null)
                 _detailRow('Inscrit le', _formatDate(data['createdAt'])),
             ],
@@ -255,9 +321,69 @@ class _UsersScreenState extends State<UsersScreen> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Fermer'),
           ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _confirmToggleActive(id, name.toString(), isActive);
+            },
+            style: TextButton.styleFrom(
+                foregroundColor: isActive ? errorColor : successColor),
+            child: Text(isActive ? 'Bloquer' : 'Débloquer'),
+          ),
         ],
       ),
     );
+  }
+
+  // Bloquer/débloquer un client
+  Future<void> _confirmToggleActive(
+      String userId, String userName, bool currentlyActive) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title:
+            Text(currentlyActive ? 'Bloquer le client' : 'Débloquer le client'),
+        content: Text(currentlyActive
+            ? 'Voulez-vous vraiment bloquer $userName ?'
+            : 'Voulez-vous vraiment débloquer $userName ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+                foregroundColor: currentlyActive ? errorColor : successColor),
+            child: Text(currentlyActive ? 'Bloquer' : 'Débloquer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await _firestore.collection('users').doc(userId).update({
+          'isActive': !currentlyActive,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content:
+                  Text(currentlyActive ? 'Client bloqué' : 'Client débloqué'),
+              backgroundColor: successColor,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur: $e'), backgroundColor: errorColor),
+          );
+        }
+      }
+    }
   }
 
   Widget _detailRow(String label, dynamic value) {

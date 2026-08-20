@@ -1,6 +1,8 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../constants.dart';
+import '../../models/order_tracking.dart';
 import '../../models/restaurant.dart';
 import '../../models/opening_hours.dart';
 import '../../services/restaurant_service.dart';
@@ -26,6 +28,26 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
   final RestaurantService _restaurantService = RestaurantService();
   late Restaurant _restaurant;
   bool _isLoading = false;
+
+  /// Filtre de la section "Historique des commandes" ci-dessous.
+  String _historyPeriod = 'all';
+  int _historyMonth = DateTime.now().month;
+  int _historyYear = DateTime.now().year;
+
+  static const _monthNames = [
+    'Janvier',
+    'Février',
+    'Mars',
+    'Avril',
+    'Mai',
+    'Juin',
+    'Juillet',
+    'Août',
+    'Septembre',
+    'Octobre',
+    'Novembre',
+    'Décembre',
+  ];
 
   @override
   void initState() {
@@ -76,6 +98,10 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
                       _buildHoursSection(),
                       const SizedBox(height: largePadding),
 
+                      // Historique des commandes (suivi de compte)
+                      _buildOrdersHistorySection(),
+                      const SizedBox(height: largePadding),
+
                       // Actions
                       _buildActionsSection(),
                     ],
@@ -97,7 +123,7 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
               width: 120,
               height: 120,
               decoration: BoxDecoration(
-                color: primaryColor.withValues(alpha:0.1),
+                color: primaryColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(defaultRadius),
               ),
               child: _restaurant.imageUrl != null
@@ -178,7 +204,8 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
           child: _buildStatCard(
             icon: Icons.attach_money,
             label: 'Revenus totaux',
-            value: '${NumberFormat('#,###').format(_restaurant.totalRevenue)} FDJ',
+            value:
+                '${NumberFormat('#,###').format(_restaurant.totalRevenue)} FDJ',
             color: Colors.green,
           ),
         ),
@@ -286,6 +313,263 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
             ],
           ),
         ),
+      ],
+    );
+  }
+
+  bool _inHistoryPeriod(DateTime? dt) {
+    if (dt == null) return false;
+    switch (_historyPeriod) {
+      case 'day':
+        final now = DateTime.now();
+        return dt.year == now.year &&
+            dt.month == now.month &&
+            dt.day == now.day;
+      case 'month':
+        return dt.year == _historyYear && dt.month == _historyMonth;
+      case 'year':
+        return dt.year == _historyYear;
+      default:
+        return true;
+    }
+  }
+
+  /// Historique réel des commandes de ce restaurant (suivi de compte) —
+  /// distinct des compteurs `totalOrders`/`totalRevenue` du document
+  /// Restaurant ci-dessus (maintenus ailleurs, potentiellement obsolètes) :
+  /// ici on lit directement `orders` et on recalcule.
+  ///
+  /// Pas d'`orderBy` combiné au `where restaurantId` pour éviter d'exiger un
+  /// index composite Firestore (non déployé dans ce repo) — tri fait côté
+  /// client, même pattern que `RestaurantService.getMenuItems`.
+  Widget _buildOrdersHistorySection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(largePadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Historique des commandes',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const Divider(height: 24),
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('orders')
+                  .where('restaurantId', isEqualTo: _restaurant.id)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Text('Erreur: ${snapshot.error}',
+                      style: const TextStyle(color: errorColor));
+                }
+                if (!snapshot.hasData) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                        child: CircularProgressIndicator(color: primaryColor)),
+                  );
+                }
+
+                final allOrders = snapshot.data!.docs
+                    .map((d) => OrderTracking.fromMap(
+                        d.id, d.data() as Map<String, dynamic>))
+                    .toList();
+
+                // Années réellement disponibles dans l'historique de ce
+                // restaurant, pour ne proposer que des choix pertinents.
+                final availableYears = allOrders
+                    .map((o) => o.createdAt?.year)
+                    .whereType<int>()
+                    .toSet()
+                    .toList()
+                  ..sort((a, b) => b.compareTo(a));
+                if (availableYears.isEmpty) {
+                  availableYears.add(DateTime.now().year);
+                }
+                if (!availableYears.contains(_historyYear)) {
+                  _historyYear = availableYears.first;
+                }
+
+                var orders = allOrders
+                    .where((o) => _inHistoryPeriod(o.createdAt))
+                    .toList()
+                  ..sort((a, b) {
+                    if (a.createdAt == null || b.createdAt == null) return 0;
+                    return b.createdAt!.compareTo(a.createdAt!);
+                  });
+
+                final delivered =
+                    orders.where((o) => o.phase == OrderPhase.delivered);
+                final total = delivered.fold<num>(0, (sum, o) => sum + o.total);
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        _periodChip('Jour', 'day'),
+                        _periodChip('Mois', 'month'),
+                        _periodChip('Année', 'year'),
+                        _periodChip('Tout', 'all'),
+                        if (_historyPeriod == 'month') _monthDropdown(),
+                        if (_historyPeriod == 'month' ||
+                            _historyPeriod == 'year')
+                          _yearDropdown(availableYears),
+                      ],
+                    ),
+                    const SizedBox(height: defaultPadding),
+                    Wrap(
+                      spacing: defaultPadding,
+                      runSpacing: 8,
+                      children: [
+                        _miniStat('Commandes', '${orders.length}'),
+                        _miniStat('Livrées', '${delivered.length}'),
+                        _miniStat('Total (livrées)',
+                            '${NumberFormat('#,###').format(total)} FDJ'),
+                      ],
+                    ),
+                    const Divider(height: 24),
+                    if (orders.isEmpty)
+                      Text('Aucune commande sur cette période.',
+                          style: TextStyle(color: Colors.grey.shade600))
+                    else
+                      Column(
+                        children: orders.take(200).map((o) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 110,
+                                  child: Text(
+                                    o.createdAt != null
+                                        ? DateFormat('dd/MM/yy HH:mm')
+                                            .format(o.createdAt!)
+                                        : '—',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade600),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(o.customerName,
+                                      overflow: TextOverflow.ellipsis),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: o.phaseColor.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: o.phaseColor),
+                                  ),
+                                  child: Text(
+                                    o.phaseLabel,
+                                    style: TextStyle(
+                                        fontSize: 11, color: o.phaseColor),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                SizedBox(
+                                  width: 80,
+                                  child: Text(
+                                    '${o.total} FDJ',
+                                    textAlign: TextAlign.right,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    if (orders.length > 200)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text('+ ${orders.length - 200} autres',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey.shade500)),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _periodChip(String label, String value) {
+    final selected = _historyPeriod == value;
+    return FilterChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => setState(() => _historyPeriod = value),
+      selectedColor: primaryColor.withValues(alpha: 0.2),
+      checkmarkColor: primaryColor,
+      labelStyle: TextStyle(
+        color: selected ? primaryColor : Colors.grey.shade700,
+        fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+      ),
+    );
+  }
+
+  Widget _monthDropdown() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(defaultRadius),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: DropdownButton<int>(
+        value: _historyMonth,
+        underline: const SizedBox(),
+        items: List.generate(12, (i) => i + 1)
+            .map((m) =>
+                DropdownMenuItem(value: m, child: Text(_monthNames[m - 1])))
+            .toList(),
+        onChanged: (v) {
+          if (v != null) setState(() => _historyMonth = v);
+        },
+      ),
+    );
+  }
+
+  Widget _yearDropdown(List<int> availableYears) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(defaultRadius),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: DropdownButton<int>(
+        value: _historyYear,
+        underline: const SizedBox(),
+        items: availableYears
+            .map((y) => DropdownMenuItem(value: y, child: Text('$y')))
+            .toList(),
+        onChanged: (v) {
+          if (v != null) setState(() => _historyYear = v);
+        },
+      ),
+    );
+  }
+
+  Widget _miniStat(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(value,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        Text(label,
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
       ],
     );
   }
@@ -579,7 +863,7 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withValues(alpha:0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color),
       ),

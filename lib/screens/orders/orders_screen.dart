@@ -1,8 +1,22 @@
-import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart';
-import '../../constants.dart';
+import 'dart:async';
+import 'dart:convert';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
+import 'dart:math' as math;
+import 'dart:typed_data';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
+import '../../constants.dart';
+import '../../models/order_tracking.dart';
+
+/// Suivi complet du cycle de vie des commandes : créée → en préparation
+/// (resto) → prête → livreur en route vers le resto → en livraison →
+/// livrée/annulée. Les délais (25 min préparation, 15 min trajet livreur→
+/// resto, 30 min livraison) sont dérivés des timestamps déjà écrits sur
+/// `orders` par les apps resto/livreur — voir [OrderTracking].
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
 
@@ -12,108 +26,117 @@ class OrdersScreen extends StatefulWidget {
 
 class _OrdersScreenState extends State<OrdersScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  String _filterStatus = 'tous';
 
-  DateTime? _parseDate(dynamic value) {
-    if (value == null) return null;
-    if (value is Timestamp) return value.toDate();
-    if (value is String) return DateTime.tryParse(value);
-    return null;
-  }
+  /// Rafraîchit l'UI périodiquement pour recalculer les délais.
+  Timer? _ticker;
 
-  String _formatDate(dynamic value, {String pattern = 'dd/MM/yyyy HH:mm'}) {
-    final dt = _parseDate(value);
-    if (dt == null) return 'N/A';
-    return DateFormat(pattern).format(dt);
-  }
+  /// IDs déjà signalés comme critiques, pour ne biper qu'aux nouveaux.
+  final Set<String> _knownCriticalIds = {};
+  bool _soundEnabled = true;
+
   String _searchQuery = '';
+  OrderPhase? _filterPhase;
 
-  static const _statusList = [
-    'tous',
-    'pending',
-    'ready',
-    'delivering',
-    'completed',
-    'cancelled',
+  /// Titre d'onglet capturé au démarrage, restauré quand plus rien n'est
+  /// critique — permet d'alerter l'admin même si le son est coupé ou que
+  /// l'onglet est en arrière-plan (pas soumis à la politique d'autoplay).
+  late final String _baseTitle;
+  final ScrollController _horizontalController = ScrollController();
+
+  static const _filterablePhases = [
+    OrderPhase.awaitingAcceptance,
+    OrderPhase.preparing,
+    OrderPhase.readyForPickup,
+    OrderPhase.driverToRestaurant,
+    OrderPhase.delivering,
+    OrderPhase.delivered,
+    OrderPhase.cancelled,
   ];
 
-  static const _statusLabels = {
-    'tous': 'Tous',
-    'pending': 'En attente',
-    'ready': 'Prête',
-    'delivering': 'En livraison',
-    'completed': 'Terminée',
-    'cancelled': 'Annulée',
-  };
+  @override
+  void initState() {
+    super.initState();
+    _baseTitle = html.document.title;
+    _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
+  }
 
-  Color _statusColor(String status) {
-    switch (status) {
-      case 'completed':
-        return successColor;
-      case 'delivering':
-        return infoColor;
-      case 'ready':
-        return warningColor;
-      case 'pending':
-        return Colors.orange;
-      case 'cancelled':
-        return errorColor;
-      default:
-        return Colors.grey;
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    _horizontalController.dispose();
+    html.document.title = _baseTitle;
+    super.dispose();
+  }
+
+  void _updateTitleAlert(int criticalCount) {
+    html.document.title =
+        criticalCount > 0 ? '🔴 ($criticalCount) $_baseTitle' : _baseTitle;
+  }
+
+  void _playAlert() {
+    if (!_soundEnabled) return;
+    try {
+      html.AudioElement(_beepDataUri()).play();
+    } catch (_) {
+      // Audio indisponible (autoplay bloqué tant que l'admin n'a pas interagi).
     }
+  }
+
+  /// Génère un court bip (880 Hz, ~0,25 s) encodé en WAV/base64, sans fichier
+  /// asset ni dépendance externe.
+  String _beepDataUri() {
+    const sampleRate = 8000;
+    const seconds = 0.25;
+    const freq = 880.0;
+    final sampleCount = (sampleRate * seconds).round();
+    final dataBytes = sampleCount * 2; // 16-bit mono
+    final buffer = ByteData(44 + dataBytes);
+
+    void writeString(int offset, String s) {
+      for (var i = 0; i < s.length; i++) {
+        buffer.setUint8(offset + i, s.codeUnitAt(i));
+      }
+    }
+
+    writeString(0, 'RIFF');
+    buffer.setUint32(4, 36 + dataBytes, Endian.little);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    buffer.setUint32(16, 16, Endian.little);
+    buffer.setUint16(20, 1, Endian.little);
+    buffer.setUint16(22, 1, Endian.little);
+    buffer.setUint32(24, sampleRate, Endian.little);
+    buffer.setUint32(28, sampleRate * 2, Endian.little);
+    buffer.setUint16(32, 2, Endian.little);
+    buffer.setUint16(34, 16, Endian.little);
+    writeString(36, 'data');
+    buffer.setUint32(40, dataBytes, Endian.little);
+
+    for (var i = 0; i < sampleCount; i++) {
+      final env = math.min(1.0, math.min(i, sampleCount - i) / 200.0);
+      final sample =
+          (math.sin(2 * math.pi * freq * i / sampleRate) * 0.3 * env * 32767)
+              .round();
+      buffer.setInt16(44 + i * 2, sample, Endian.little);
+    }
+
+    final b64 = base64Encode(buffer.buffer.asUint8List());
+    return 'data:audio/wav;base64,$b64';
+  }
+
+  void _call(String phone) {
+    final cleaned = phone.replaceAll(' ', '');
+    if (cleaned.isEmpty) return;
+    html.window.open('tel:$cleaned', '_self');
   }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Header
-        Container(
-          padding: const EdgeInsets.all(defaultPadding),
-          color: cardColor,
-          child: Column(
-            children: [
-              TextField(
-                decoration: InputDecoration(
-                  hintText: 'Rechercher une commande...',
-                  prefixIcon: const Icon(Icons.search),
-                  filled: true,
-                  fillColor: backgroundColor,
-                ),
-                onChanged: (v) => setState(() => _searchQuery = v.toLowerCase()),
-              ),
-              const SizedBox(height: 12),
-              // Filtres statut
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: _statusList.map((s) {
-                    final selected = _filterStatus == s;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: FilterChip(
-                        label: Text(_statusLabels[s]!),
-                        selected: selected,
-                        onSelected: (_) =>
-                            setState(() => _filterStatus = s),
-                        selectedColor: primaryColor.withValues(alpha: 0.2),
-                        checkmarkColor: primaryColor,
-                        labelStyle: TextStyle(
-                          color: selected ? primaryColor : Colors.grey.shade700,
-                          fontWeight: selected
-                              ? FontWeight.w600
-                              : FontWeight.normal,
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Liste commandes
+        _buildHeader(),
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
             stream: _firestore
@@ -131,46 +154,42 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 );
               }
 
-              var docs = snapshot.data!.docs.toList();
+              var items = snapshot.data!.docs
+                  .map((d) => OrderTracking.fromMap(
+                      d.id, d.data() as Map<String, dynamic>))
+                  .toList();
 
-              // Tri par date décroissante (du plus récent au plus ancien)
-              docs.sort((a, b) {
-                final da = _parseDate(
-                    (a.data() as Map<String, dynamic>)['createdAt']);
-                final db = _parseDate(
-                    (b.data() as Map<String, dynamic>)['createdAt']);
-                if (da == null && db == null) return 0;
-                if (da == null) return 1;
-                if (db == null) return -1;
-                return db.compareTo(da);
-              });
-
-              // Filtre statut
-              if (_filterStatus != 'tous') {
-                docs = docs
-                    .where((d) =>
-                        (d.data() as Map<String, dynamic>)['status'] ==
-                        _filterStatus)
-                    .toList();
+              if (_filterPhase != null) {
+                items = items.where((o) => o.phase == _filterPhase).toList();
               }
 
-              // Filtre recherche
               if (_searchQuery.isNotEmpty) {
-                docs = docs.where((d) {
-                  final data = d.data() as Map<String, dynamic>;
-                  final customer =
-                      (data['customerName'] ?? '').toString().toLowerCase();
-                  final restaurant =
-                      (data['restaurantName'] ?? '').toString().toLowerCase();
-                  final address =
-                      (data['deliveryAddress'] ?? '').toString().toLowerCase();
-                  return customer.contains(_searchQuery) ||
-                      restaurant.contains(_searchQuery) ||
-                      address.contains(_searchQuery);
+                items = items.where((o) {
+                  return o.customerName.toLowerCase().contains(_searchQuery) ||
+                      o.restaurantName.toLowerCase().contains(_searchQuery) ||
+                      o.driverName.toLowerCase().contains(_searchQuery) ||
+                      o.deliveryAddress.toLowerCase().contains(_searchQuery);
                 }).toList();
               }
 
-              if (docs.isEmpty) {
+              // Détection des nouveaux critiques → bip sonore.
+              final currentCritical = items
+                  .where((o) =>
+                      !o.isTerminal && o.delayLevel == DelayLevel.critical)
+                  .map((o) => o.id)
+                  .toSet();
+              final newCritical = currentCritical.difference(_knownCriticalIds);
+              if (newCritical.isNotEmpty) {
+                WidgetsBinding.instance
+                    .addPostFrameCallback((_) => _playAlert());
+              }
+              _knownCriticalIds
+                ..clear()
+                ..addAll(currentCritical);
+              WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => _updateTitleAlert(currentCritical.length));
+
+              if (items.isEmpty) {
                 return Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -188,8 +207,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
               }
 
               return isMobile(context)
-                  ? _buildMobileList(docs)
-                  : _buildDesktopTable(docs);
+                  ? _buildMobileList(items)
+                  : _buildDesktopTable(items);
             },
           ),
         ),
@@ -197,17 +216,126 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-  Widget _buildMobileList(List<QueryDocumentSnapshot> docs) {
+  Widget _buildHeader() {
+    return Container(
+      padding: const EdgeInsets.all(defaultPadding),
+      color: cardColor,
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Rechercher une commande...',
+                    prefixIcon: const Icon(Icons.search),
+                    filled: true,
+                    fillColor: backgroundColor,
+                  ),
+                  onChanged: (v) =>
+                      setState(() => _searchQuery = v.toLowerCase()),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: _soundEnabled ? 'Couper le son' : 'Activer le son',
+                icon: Icon(
+                  _soundEnabled ? Icons.volume_up : Icons.volume_off,
+                  color: _soundEnabled ? primaryColor : Colors.grey,
+                ),
+                onPressed: () => setState(() => _soundEnabled = !_soundEnabled),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: FilterChip(
+                    label: const Text('Tous'),
+                    selected: _filterPhase == null,
+                    onSelected: (_) => setState(() => _filterPhase = null),
+                    selectedColor: primaryColor.withValues(alpha: 0.2),
+                    checkmarkColor: primaryColor,
+                    labelStyle: TextStyle(
+                      color: _filterPhase == null
+                          ? primaryColor
+                          : Colors.grey.shade700,
+                      fontWeight: _filterPhase == null
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ),
+                ..._filterablePhases.map((phase) {
+                  final selected = _filterPhase == phase;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: FilterChip(
+                      label: Text(orderPhaseLabel(phase)),
+                      selected: selected,
+                      onSelected: (_) => setState(() => _filterPhase = phase),
+                      selectedColor: primaryColor.withValues(alpha: 0.2),
+                      checkmarkColor: primaryColor,
+                      labelStyle: TextStyle(
+                        color: selected ? primaryColor : Colors.grey.shade700,
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _phaseBadge(OrderTracking o) {
+    final delay = o.delayLabel;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: o.phaseColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: o.phaseColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            o.phaseLabel,
+            style: TextStyle(
+              fontSize: 12,
+              color: o.phaseColor,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (delay.isNotEmpty)
+            Text(
+              delay,
+              style: TextStyle(
+                fontSize: 11,
+                color: o.phaseColor,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileList(List<OrderTracking> items) {
     return ListView.builder(
       padding: const EdgeInsets.all(defaultPadding),
-      itemCount: docs.length,
+      itemCount: items.length,
       itemBuilder: (context, i) {
-        final data = docs[i].data() as Map<String, dynamic>;
-        final status = data['status'] ?? 'pending';
-        final createdAt = data['createdAt'] != null
-            ? _formatDate(data['createdAt'])
-            : 'N/A';
-
+        final o = items[i];
         return Card(
           margin: const EdgeInsets.only(bottom: defaultPadding),
           child: Padding(
@@ -220,21 +348,39 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   children: [
                     Expanded(
                       child: Text(
-                        data['restaurantName'] ?? 'N/A',
+                        o.restaurantName,
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
-                    _buildStatusBadge(status),
+                    _phaseBadge(o),
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text('Client: ${data['customerName'] ?? 'N/A'}'),
-                Text('Tél: ${data['customerPhone'] ?? 'N/A'}'),
-                Text(
-                    'Total: ${data['total'] != null ? '${data['total']} FDJ' : 'N/A'}'),
-                Text('Date: $createdAt'),
-                if (data['deliveryDriverName'] != null)
-                  Text('Livreur: ${data['deliveryDriverName']}'),
+                Text('Client : ${o.customerName}'),
+                if (o.customerPhone.isNotEmpty)
+                  Text('Tél : ${o.customerPhone}'),
+                if (o.driverName.isNotEmpty) Text('Livreur : ${o.driverName}'),
+                Text('Total : ${o.total} FDJ'),
+                Text('Créée le : ${_formatDate(o.createdAt)}'),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (o.customerPhone.isNotEmpty)
+                      IconButton(
+                        icon: const Icon(Icons.phone,
+                            size: 20, color: primaryColor),
+                        tooltip: 'Appeler le client',
+                        onPressed: () => _call(o.customerPhone),
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.visibility, size: 20),
+                      onPressed: () => _showOrderDetails(o),
+                      tooltip: 'Voir détails',
+                    ),
+                    _cancelButton(o),
+                  ],
+                ),
               ],
             ),
           ),
@@ -243,86 +389,76 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-  Widget _buildDesktopTable(List<QueryDocumentSnapshot> docs) {
+  Widget _buildDesktopTable(List<OrderTracking> items) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(defaultPadding),
       child: Card(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-          columns: const [
-            DataColumn(label: Text('Statut')),
-            DataColumn(label: Text('Restaurant')),
-            DataColumn(label: Text('Client')),
-            DataColumn(label: Text('Téléphone')),
-            DataColumn(label: Text('Total')),
-            DataColumn(label: Text('Livreur')),
-            DataColumn(label: Text('Date')),
-            DataColumn(label: Text('Actions')),
-          ],
-          rows: docs.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            final status = data['status'] ?? 'pending';
-            final createdAt = data['createdAt'] != null
-                ? _formatDate(data['createdAt'], pattern: 'dd/MM HH:mm')
-                : 'N/A';
-
-            return DataRow(cells: [
-              DataCell(_buildStatusBadge(status)),
-              DataCell(Text(data['restaurantName'] ?? 'N/A')),
-              DataCell(Text(data['customerName'] ?? 'N/A')),
-              DataCell(Text(data['customerPhone'] ?? 'N/A')),
-              DataCell(Text(
-                  data['total'] != null ? '${data['total']} FDJ' : 'N/A')),
-              DataCell(Text(data['deliveryDriverName'] ?? '-')),
-              DataCell(Text(createdAt)),
-              DataCell(
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.visibility, size: 20),
-                      onPressed: () => _showOrderDetails(doc.id, data),
-                      tooltip: 'Voir détails',
+        child: Scrollbar(
+          controller: _horizontalController,
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            controller: _horizontalController,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(bottom: 12),
+            child: DataTable(
+              columnSpacing: 24,
+              horizontalMargin: 16,
+              headingRowHeight: 48,
+              dataRowMinHeight: 56,
+              dataRowMaxHeight: 72,
+              columns: const [
+                DataColumn(label: Text('Statut')),
+                DataColumn(label: Text('Restaurant')),
+                DataColumn(label: Text('Client')),
+                DataColumn(label: Text('Téléphone')),
+                DataColumn(label: Text('Livreur')),
+                DataColumn(label: Text('Créée le')),
+                DataColumn(label: Text('Actions')),
+              ],
+              rows: items.map((o) {
+                return DataRow(cells: [
+                  DataCell(_phaseBadge(o)),
+                  DataCell(Text(o.restaurantName)),
+                  DataCell(Text(o.customerName)),
+                  DataCell(
+                      Text(o.customerPhone.isEmpty ? '—' : o.customerPhone)),
+                  DataCell(Text(o.driverName.isEmpty ? '—' : o.driverName)),
+                  DataCell(
+                      Text(_formatDate(o.createdAt, pattern: 'dd/MM HH:mm'))),
+                  DataCell(
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.visibility, size: 20),
+                          onPressed: () => _showOrderDetails(o),
+                          tooltip: 'Voir détails',
+                        ),
+                        if (o.customerPhone.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.phone,
+                                size: 20, color: primaryColor),
+                            tooltip: 'Appeler le client',
+                            onPressed: () => _call(o.customerPhone),
+                          ),
+                        _cancelButton(o),
+                      ],
                     ),
-                    if (['pending', 'confirmed', 'preparing', 'ready', 'delivering']
-                        .contains(status))
-                      IconButton(
-                        icon: const Icon(Icons.cancel,
-                            size: 20, color: errorColor),
-                        onPressed: () => _confirmCancel(doc.id),
-                        tooltip: 'Annuler',
-                      ),
-                  ],
-                ),
-              ),
-            ]);
-          }).toList(),
+                  ),
+                ]);
+              }).toList(),
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildStatusBadge(String status) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: _statusColor(status).withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _statusColor(status)),
-      ),
-      child: Text(
-        _statusLabels[status] ?? status,
-        style: TextStyle(
-          fontSize: 12,
-          color: _statusColor(status),
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
+  String _formatDate(DateTime? dt, {String pattern = 'dd/MM/yyyy HH:mm'}) {
+    if (dt == null) return 'N/A';
+    return DateFormat(pattern).format(dt);
   }
 
-  void _showOrderDetails(String id, Map<String, dynamic> data) {
+  void _showOrderDetails(OrderTracking o) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -338,20 +474,25 @@ class _OrdersScreenState extends State<OrdersScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _detailRow('ID', id),
-              _detailRow('Statut', _statusLabels[data['status']] ?? data['status']),
-              _detailRow('Restaurant', data['restaurantName']),
-              _detailRow('Client', data['customerName']),
-              _detailRow('Téléphone', data['customerPhone']),
-              _detailRow('Adresse', data['deliveryAddress']),
-              _detailRow('Sous-total', '${data['subtotal'] ?? 0} FDJ'),
-              _detailRow('Livraison', '${data['deliveryFee'] ?? 0} FDJ'),
-              _detailRow('Total', '${data['total'] ?? 0} FDJ'),
-              _detailRow('Paiement', data['paymentMethod']),
-              if (data['deliveryDriverName'] != null)
-                _detailRow('Livreur', data['deliveryDriverName']),
-              if (data['createdAt'] != null)
-                _detailRow('Créée le', _formatDate(data['createdAt'])),
+              _detailRow('ID', o.id),
+              _detailRow('Statut', o.phaseLabel),
+              if (o.delayLabel.isNotEmpty) _detailRow('Délai', o.delayLabel),
+              _detailRow('Restaurant', o.restaurantName),
+              _detailRow('Client', o.customerName),
+              _detailRow('Téléphone', o.customerPhone),
+              _detailRow('Adresse', o.deliveryAddress),
+              _detailRow('Total', '${o.total} FDJ'),
+              if (o.driverName.isNotEmpty) _detailRow('Livreur', o.driverName),
+              const Divider(height: 20),
+              _detailRow('Créée le', _formatDate(o.createdAt)),
+              _detailRow('Acceptée à', _formatDate(o.acceptedAt)),
+              _detailRow('Prête à', _formatDate(o.readyAt)),
+              _detailRow('Assignée à', _formatDate(o.assignedAt)),
+              _detailRow('Récupérée à', _formatDate(o.pickedUpAt)),
+              if (o.phase == OrderPhase.cancelled)
+                _detailRow('Annulée à', _formatDate(o.cancelledAt))
+              else
+                _detailRow('Livrée à', _formatDate(o.deliveredAt)),
             ],
           ),
         ),
@@ -385,13 +526,30 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
+  /// Icône Annuler toujours rendue (jamais masquée) : grisée/désactivée sur
+  /// une commande déjà terminée, avec un tooltip qui explique pourquoi — pour
+  /// qu'elle ne soit jamais perçue comme "absente".
+  Widget _cancelButton(OrderTracking o) {
+    final disabled = o.isTerminal;
+    final tooltip = switch (o.phase) {
+      OrderPhase.cancelled => 'Commande déjà annulée',
+      OrderPhase.delivered => 'Commande déjà livrée',
+      _ => 'Annuler la commande',
+    };
+    return IconButton(
+      icon: Icon(Icons.cancel,
+          size: 20, color: disabled ? Colors.grey.shade400 : errorColor),
+      onPressed: disabled ? null : () => _confirmCancel(o.id),
+      tooltip: tooltip,
+    );
+  }
+
   Future<void> _confirmCancel(String orderId) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Annuler la commande'),
-        content: const Text(
-            'Voulez-vous vraiment annuler cette commande ?'),
+        content: const Text('Voulez-vous vraiment annuler cette commande ?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),

@@ -1,5 +1,7 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../../constants.dart';
+import '../../models/order_tracking.dart';
 import '../../models/restaurant.dart';
 import '../../services/restaurant_service.dart';
 import 'add_restaurant_screen.dart';
@@ -16,6 +18,7 @@ class RestaurantsListScreen extends StatefulWidget {
 class _RestaurantsListScreenState extends State<RestaurantsListScreen> {
   final RestaurantService _restaurantService = RestaurantService();
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _horizontalController = ScrollController();
 
   String _filterStatus = 'all'; // all, active, inactive
   String _searchQuery = '';
@@ -23,6 +26,7 @@ class _RestaurantsListScreenState extends State<RestaurantsListScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _horizontalController.dispose();
     super.dispose();
   }
 
@@ -36,41 +40,68 @@ class _RestaurantsListScreenState extends State<RestaurantsListScreen> {
 
           // Contenu
           Expanded(
-            child: StreamBuilder<List<Restaurant>>(
-              stream: _getFilteredStream(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(color: primaryColor),
-                  );
+            child: StreamBuilder<QuerySnapshot>(
+              // Commandes récentes, pour dériver quels restaurants ont une
+              // commande "en préparation" en ce moment (budget 25 min, voir
+              // OrderTracking). Filtrage client-side, même pattern que
+              // dashboard_home.dart / orders_screen.dart.
+              stream: FirebaseFirestore.instance
+                  .collection('orders')
+                  .orderBy('createdAt', descending: true)
+                  .limit(200)
+                  .snapshots(),
+              builder: (context, ordersSnapshot) {
+                final preparingByRestaurant = <String, List<OrderTracking>>{};
+                if (ordersSnapshot.hasData) {
+                  for (final doc in ordersSnapshot.data!.docs) {
+                    final order = OrderTracking.fromMap(
+                        doc.id, doc.data() as Map<String, dynamic>);
+                    if (order.phase == OrderPhase.preparing) {
+                      preparingByRestaurant
+                          .putIfAbsent(order.restaurantId, () => [])
+                          .add(order);
+                    }
+                  }
                 }
 
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Text('Erreur: ${snapshot.error}'),
-                  );
-                }
+                return StreamBuilder<List<Restaurant>>(
+                  stream: _getFilteredStream(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: CircularProgressIndicator(color: primaryColor),
+                      );
+                    }
 
-                final restaurants = snapshot.data ?? [];
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Text('Erreur: ${snapshot.error}'),
+                      );
+                    }
 
-                // Filtrer par recherche
-                final filteredRestaurants = _searchQuery.isEmpty
-                    ? restaurants
-                    : restaurants
-                        .where((r) =>
-                            r.name
-                                .toLowerCase()
-                                .contains(_searchQuery.toLowerCase()) ||
-                            r.email
-                                .toLowerCase()
-                                .contains(_searchQuery.toLowerCase()))
-                        .toList();
+                    final restaurants = snapshot.data ?? [];
 
-                if (filteredRestaurants.isEmpty) {
-                  return _buildEmptyState();
-                }
+                    // Filtrer par recherche
+                    final filteredRestaurants = _searchQuery.isEmpty
+                        ? restaurants
+                        : restaurants
+                            .where((r) =>
+                                r.name
+                                    .toLowerCase()
+                                    .contains(_searchQuery.toLowerCase()) ||
+                                r.email
+                                    .toLowerCase()
+                                    .contains(_searchQuery.toLowerCase()))
+                            .toList();
 
-                return _buildRestaurantsList(filteredRestaurants);
+                    if (filteredRestaurants.isEmpty) {
+                      return _buildEmptyState();
+                    }
+
+                    return _buildRestaurantsList(
+                        filteredRestaurants, preparingByRestaurant);
+                  },
+                );
               },
             ),
           ),
@@ -177,28 +208,74 @@ class _RestaurantsListScreenState extends State<RestaurantsListScreen> {
     );
   }
 
-  Widget _buildRestaurantsList(List<Restaurant> restaurants) {
+  Widget _buildRestaurantsList(List<Restaurant> restaurants,
+      Map<String, List<OrderTracking>> preparingByRestaurant) {
     if (isMobile(context)) {
       return ListView.builder(
         padding: const EdgeInsets.all(defaultPadding),
         itemCount: restaurants.length,
-        itemBuilder: (context, index) =>
-            _buildRestaurantCard(restaurants[index]),
+        itemBuilder: (context, index) => _buildRestaurantCard(
+            restaurants[index], preparingByRestaurant[restaurants[index].id]),
       );
     } else {
       return SingleChildScrollView(
         padding: const EdgeInsets.all(largePadding),
-        child: _buildDataTable(restaurants),
+        child: _buildDataTable(restaurants, preparingByRestaurant),
       );
     }
   }
 
-  Widget _buildRestaurantCard(Restaurant restaurant) {
+  /// Badge "Commande en cours" (texte affiché en entier, sans troncature) :
+  /// visible uniquement si ce restaurant a une commande actuellement en
+  /// préparation (acceptée, pas encore prête). Coloré selon le dépassement
+  /// du budget de 25 min ([OrderTracking.prepTargetMinutes]).
+  Widget _buildActiveOrderBadge(List<OrderTracking>? preparing) {
+    if (preparing == null || preparing.isEmpty) return const SizedBox.shrink();
+    final sorted = [...preparing]..sort((a, b) {
+        final ta = a.acceptedAt;
+        final tb = b.acceptedAt;
+        if (ta == null || tb == null) return 0;
+        return ta.compareTo(tb);
+      });
+    final oldest = sorted.first;
+    final color = oldest.phaseColor;
+    final label = preparing.length > 1
+        ? 'Commande en cours ×${preparing.length}'
+        : 'Commande en cours';
+
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.soup_kitchen, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRestaurantCard(
+      Restaurant restaurant, List<OrderTracking>? preparing) {
     return Card(
       margin: const EdgeInsets.only(bottom: defaultPadding),
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: primaryColor.withValues(alpha:0.1),
+          backgroundColor: primaryColor.withValues(alpha: 0.1),
           child: restaurant.imageUrl != null
               ? ClipOval(
                   child: Image.network(
@@ -224,7 +301,14 @@ class _RestaurantsListScreenState extends State<RestaurantsListScreen> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildStatusBadge(restaurant),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildStatusBadge(restaurant),
+                _buildActiveOrderBadge(preparing),
+              ],
+            ),
             IconButton(
               icon: const Icon(Icons.restaurant_menu, color: primaryColor),
               tooltip: 'Gérer le menu',
@@ -237,118 +321,146 @@ class _RestaurantsListScreenState extends State<RestaurantsListScreen> {
     );
   }
 
-  Widget _buildDataTable(List<Restaurant> restaurants) {
+  Widget _buildDataTable(List<Restaurant> restaurants,
+      Map<String, List<OrderTracking>> preparingByRestaurant) {
     return Card(
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          columns: const [
-            DataColumn(label: Text('Nom')),
-            DataColumn(label: Text('Email')),
-            DataColumn(label: Text('Téléphone')),
-            DataColumn(label: Text('Adresse')),
-            DataColumn(label: Text('Statut')),
-            DataColumn(label: Text('Commandes')),
-            DataColumn(label: Text('Note')),
-            DataColumn(label: Text('Actions')),
-          ],
-          rows: restaurants
-              .map(
-                (restaurant) => DataRow(
-                  onSelectChanged: (_) => _navigateToDetails(restaurant),
-                  cells: [
-                    DataCell(
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 16,
-                            backgroundColor: primaryColor.withValues(alpha:0.1),
-                            child: restaurant.imageUrl != null
-                                ? ClipOval(
-                                    child: Image.network(
-                                      restaurant.imageUrl!,
-                                      width: 32,
-                                      height: 32,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => const Icon(
-                                        Icons.restaurant,
-                                        size: 16,
-                                        color: primaryColor,
-                                      ),
-                                    ),
-                                  )
-                                : const Icon(
-                                    Icons.restaurant,
-                                    size: 16,
-                                    color: primaryColor,
-                                  ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            restaurant.name,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      ),
-                    ),
-                    DataCell(Text(restaurant.email)),
-                    DataCell(Text(restaurant.formattedPhone)),
-                    DataCell(
-                      SizedBox(
-                        width: 150,
-                        child: Text(
-                          restaurant.address,
-                          overflow: TextOverflow.ellipsis,
+      child: Scrollbar(
+        controller: _horizontalController,
+        thumbVisibility: true,
+        child: SingleChildScrollView(
+          controller: _horizontalController,
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.only(bottom: 12),
+          child: DataTable(
+            columnSpacing: 24,
+            horizontalMargin: 16,
+            headingRowHeight: 56,
+            dataRowMinHeight: 56,
+            dataRowMaxHeight: 76,
+            columns: const [
+              // Actions en 1re colonne pour être toujours visibles sans avoir
+              // à scroller horizontalement (même pattern que livreurs_list_screen).
+              DataColumn(label: Text('Actions')),
+              DataColumn(label: Text('Nom')),
+              DataColumn(label: Text('Email')),
+              DataColumn(label: Text('Téléphone')),
+              DataColumn(label: Text('Adresse')),
+              DataColumn(label: Text('Statut')),
+              DataColumn(label: Text('Commandes')),
+              DataColumn(label: Text('Note')),
+            ],
+            rows: restaurants
+                .map(
+                  (restaurant) => DataRow(
+                    onSelectChanged: (_) => _navigateToDetails(restaurant),
+                    cells: [
+                      DataCell(
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.visibility),
+                              onPressed: () => _navigateToDetails(restaurant),
+                              tooltip: 'Voir détails',
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.restaurant_menu,
+                                  color: primaryColor),
+                              onPressed: () => _navigateToMenu(restaurant),
+                              tooltip: 'Gérer le menu',
+                            ),
+                            IconButton(
+                              icon: Icon(
+                                restaurant.isActive
+                                    ? Icons.toggle_on
+                                    : Icons.toggle_off,
+                                color: restaurant.isActive
+                                    ? successColor
+                                    : Colors.grey,
+                              ),
+                              onPressed: () => _toggleActive(restaurant),
+                              tooltip: restaurant.isActive
+                                  ? 'Désactiver'
+                                  : 'Activer',
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                    DataCell(_buildStatusBadge(restaurant)),
-                    DataCell(Text(restaurant.totalOrders.toString())),
-                    DataCell(
-                      Row(
-                        children: [
-                          const Icon(Icons.star, size: 16, color: Colors.amber),
-                          const SizedBox(width: 4),
-                          Text(restaurant.rating.toStringAsFixed(1)),
-                        ],
-                      ),
-                    ),
-                    DataCell(
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.visibility),
-                            onPressed: () => _navigateToDetails(restaurant),
-                            tooltip: 'Voir détails',
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.restaurant_menu,
-                                color: primaryColor),
-                            onPressed: () => _navigateToMenu(restaurant),
-                            tooltip: 'Gérer le menu',
-                          ),
-                          IconButton(
-                            icon: Icon(
-                              restaurant.isActive
-                                  ? Icons.toggle_on
-                                  : Icons.toggle_off,
-                              color: restaurant.isActive
-                                  ? successColor
-                                  : Colors.grey,
+                      DataCell(
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 16,
+                              backgroundColor:
+                                  primaryColor.withValues(alpha: 0.1),
+                              child: restaurant.imageUrl != null
+                                  ? ClipOval(
+                                      child: Image.network(
+                                        restaurant.imageUrl!,
+                                        width: 32,
+                                        height: 32,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) =>
+                                            const Icon(
+                                          Icons.restaurant,
+                                          size: 16,
+                                          color: primaryColor,
+                                        ),
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.restaurant,
+                                      size: 16,
+                                      color: primaryColor,
+                                    ),
                             ),
-                            onPressed: () => _toggleActive(restaurant),
-                            tooltip: restaurant.isActive
-                                ? 'Désactiver'
-                                : 'Activer',
-                          ),
-                        ],
+                            const SizedBox(width: 8),
+                            Text(
+                              restaurant.name,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              )
-              .toList(),
+                      DataCell(Text(restaurant.email)),
+                      DataCell(Text(restaurant.formattedPhone)),
+                      DataCell(
+                        SizedBox(
+                          width: 150,
+                          child: Text(
+                            restaurant.address,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                      DataCell(
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildStatusBadge(restaurant),
+                            _buildActiveOrderBadge(
+                                preparingByRestaurant[restaurant.id]),
+                          ],
+                        ),
+                      ),
+                      DataCell(Text(restaurant.totalOrders.toString())),
+                      DataCell(
+                        Row(
+                          children: [
+                            const Icon(Icons.star,
+                                size: 16, color: Colors.amber),
+                            const SizedBox(width: 4),
+                            Text(restaurant.rating.toStringAsFixed(1)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+                .toList(),
+          ),
         ),
       ),
     );
@@ -375,7 +487,7 @@ class _RestaurantsListScreenState extends State<RestaurantsListScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha:0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color),
       ),
@@ -435,7 +547,8 @@ class _RestaurantsListScreenState extends State<RestaurantsListScreen> {
 
   Future<void> _toggleActive(Restaurant restaurant) async {
     try {
-      await _restaurantService.toggleActive(restaurant.id, !restaurant.isActive);
+      await _restaurantService.toggleActive(
+          restaurant.id, !restaurant.isActive);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

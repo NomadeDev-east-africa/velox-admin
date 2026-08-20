@@ -75,124 +75,136 @@ class DashboardHome extends StatelessWidget {
       stream: FirebaseFirestore.instance.collection('drivers').snapshots(),
       builder: (context, driversSnapshot) {
         return StreamBuilder<QuerySnapshot>(
-          stream:
-              FirebaseFirestore.instance.collection('restaurants').snapshots(),
-          builder: (context, restaurantsSnapshot) {
-            // Compter les chauffeurs
-            int totalDrivers = 0;
-            int onlineDrivers = 0;
+          stream: FirebaseFirestore.instance.collection('livreurs').snapshots(),
+          builder: (context, livreursSnapshot) {
+            return StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('restaurants')
+                  .snapshots(),
+              builder: (context, restaurantsSnapshot) {
+                return StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('orders')
+                      .snapshots(),
+                  builder: (context, ordersSnapshot) {
+                    return StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection(FirebaseKeys.taxiRides)
+                          .snapshots(),
+                      builder: (context, ridesSnapshot) {
+                        // Chauffeurs (taxi)
+                        int totalDrivers = 0;
+                        int activeDrivers = 0;
+                        if (driversSnapshot.hasData) {
+                          totalDrivers = driversSnapshot.data!.docs.length;
+                          activeDrivers =
+                              driversSnapshot.data!.docs.where((doc) {
+                            final data = doc.data() as Map<String, dynamic>?;
+                            if (data == null) return false;
+                            return (data['isActive'] ?? true) == true;
+                          }).length;
+                        }
 
-            if (driversSnapshot.hasData) {
-              totalDrivers = driversSnapshot.data!.docs.length;
-              onlineDrivers = driversSnapshot.data!.docs.where((doc) {
-                final data = doc.data() as Map<String, dynamic>?;
-                if (data == null) return false;
-                // Gestion des deux formats de noms de champs
-                return (data['isOnline'] ?? data['is_online'] ?? false) == true;
-              }).length;
-            }
+                        // Livreurs
+                        int totalLivreurs = 0;
+                        int activeLivreurs = 0;
+                        if (livreursSnapshot.hasData) {
+                          totalLivreurs = livreursSnapshot.data!.docs.length;
+                          activeLivreurs =
+                              livreursSnapshot.data!.docs.where((doc) {
+                            final data = doc.data() as Map<String, dynamic>?;
+                            if (data == null) return false;
+                            return (data['isActive'] ?? true) == true;
+                          }).length;
+                        }
 
-            // Compter les restaurants
-            int totalRestaurants = 0;
-            int activeRestaurants = 0;
+                        // Restaurants
+                        int totalRestaurants = 0;
+                        int activeRestaurants = 0;
+                        if (restaurantsSnapshot.hasData) {
+                          totalRestaurants =
+                              restaurantsSnapshot.data!.docs.length;
+                          activeRestaurants =
+                              restaurantsSnapshot.data!.docs.where((doc) {
+                            final data = doc.data() as Map<String, dynamic>?;
+                            if (data == null) return false;
+                            return (data['isActive'] ?? false) == true;
+                          }).length;
+                        }
 
-            if (restaurantsSnapshot.hasData) {
-              totalRestaurants = restaurantsSnapshot.data!.docs.length;
-              activeRestaurants = restaurantsSnapshot.data!.docs.where((doc) {
-                final data = doc.data() as Map<String, dynamic>?;
-                if (data == null) return false;
-                return (data['isActive'] ?? false) == true;
-              }).length;
-            }
+                        final totalOrders =
+                            ordersSnapshot.data?.docs.length ?? 0;
+                        final totalRides = ridesSnapshot.data?.docs.length ?? 0;
 
-            return LayoutBuilder(
-              builder: (context, constraints) {
-                if (isMobile(context)) {
-                  return Column(
-                    children: [
-                      _buildStatCard(
-                        icon: Icons.people,
-                        title: 'Chauffeurs',
-                        value: '$totalDrivers',
-                        subtitle: '$onlineDrivers en ligne',
-                        color: Colors.blue,
-                      ),
-                      const SizedBox(height: defaultPadding),
-                      _buildStatCard(
-                        icon: Icons.restaurant,
-                        title: 'Restaurants',
-                        value: '$totalRestaurants',
-                        subtitle: '$activeRestaurants actifs',
-                        color: Colors.orange,
-                      ),
-                      const SizedBox(height: defaultPadding),
-                      _buildStatCard(
-                        icon: Icons.local_taxi,
-                        title: 'Courses',
-                        value: '0',
-                        subtitle: 'Aujourd\'hui',
-                        color: Colors.green,
-                      ),
-                      const SizedBox(height: defaultPadding),
-                      _buildStatCard(
-                        icon: Icons.attach_money,
-                        title: 'Revenus',
-                        value: '0 FDJ',
-                        subtitle: 'Ce mois',
-                        color: Colors.purple,
-                      ),
-                    ],
-                  );
-                } else {
-                  return Row(
-                    children: [
-                      Expanded(
-                        child: _buildStatCard(
-                          icon: Icons.people,
-                          title: 'Chauffeurs',
-                          value: '$totalDrivers',
-                          subtitle: '$onlineDrivers en ligne',
-                          color: Colors.blue,
-                        ),
-                      ),
-                      const SizedBox(width: defaultPadding),
-                      Expanded(
-                        child: _buildStatCard(
-                          icon: Icons.restaurant,
-                          title: 'Restaurants',
-                          value: '$totalRestaurants',
-                          subtitle: '$activeRestaurants actifs',
-                          color: Colors.orange,
-                        ),
-                      ),
-                      const SizedBox(width: defaultPadding),
-                      Expanded(
-                        child: _buildStatCard(
-                          icon: Icons.local_taxi,
-                          title: 'Courses',
-                          value: '0',
-                          subtitle: 'Aujourd\'hui',
-                          color: Colors.green,
-                        ),
-                      ),
-                      const SizedBox(width: defaultPadding),
-                      Expanded(
-                        child: _buildStatCard(
-                          icon: Icons.attach_money,
-                          title: 'Revenus',
-                          value: '0 FDJ',
-                          subtitle: 'Ce mois',
-                          color: Colors.purple,
-                        ),
-                      ),
-                    ],
-                  );
-                }
+                        return Wrap(
+                          spacing: defaultPadding,
+                          runSpacing: defaultPadding,
+                          children: [
+                            _wrappedStatCard(
+                              icon: Icons.people,
+                              title: 'Chauffeurs',
+                              value: '$totalDrivers',
+                              subtitle: '$activeDrivers actifs',
+                              color: Colors.blue,
+                            ),
+                            _wrappedStatCard(
+                              icon: Icons.delivery_dining,
+                              title: 'Livreurs',
+                              value: '$totalLivreurs',
+                              subtitle: '$activeLivreurs actifs',
+                              color: Colors.deepOrange,
+                            ),
+                            _wrappedStatCard(
+                              icon: Icons.restaurant,
+                              title: 'Restaurants',
+                              value: '$totalRestaurants',
+                              subtitle: '$activeRestaurants actifs',
+                              color: Colors.orange,
+                            ),
+                            _wrappedStatCard(
+                              icon: Icons.receipt_long,
+                              title: 'Commandes',
+                              value: '$totalOrders',
+                              subtitle: 'Total',
+                              color: Colors.purple,
+                            ),
+                            _wrappedStatCard(
+                              icon: Icons.local_taxi,
+                              title: 'Courses',
+                              value: '$totalRides',
+                              subtitle: 'Total',
+                              color: Colors.green,
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                );
               },
             );
           },
         );
       },
+    );
+  }
+
+  Widget _wrappedStatCard({
+    required IconData icon,
+    required String title,
+    required String value,
+    required String subtitle,
+    required Color color,
+  }) {
+    return SizedBox(
+      width: 220,
+      child: _buildStatCard(
+        icon: icon,
+        title: title,
+        value: value,
+        subtitle: subtitle,
+        color: color,
+      ),
     );
   }
 
@@ -340,10 +352,10 @@ class DashboardHome extends StatelessWidget {
 
                 final recent = items.take(15).toList();
 
-                final waiting = ordersSnap.connectionState ==
-                        ConnectionState.waiting &&
-                    restoSnap.connectionState == ConnectionState.waiting &&
-                    usersSnap.connectionState == ConnectionState.waiting;
+                final waiting =
+                    ordersSnap.connectionState == ConnectionState.waiting &&
+                        restoSnap.connectionState == ConnectionState.waiting &&
+                        usersSnap.connectionState == ConnectionState.waiting;
 
                 return Card(
                   child: Padding(

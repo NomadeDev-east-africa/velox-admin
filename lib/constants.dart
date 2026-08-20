@@ -6,32 +6,39 @@ import 'package:flutter/material.dart';
 // ============================================================
 
 // Verts de marque (repris du logo Velox)
-const Color veloxGreen = Color(0xFFA6E22E);       // vert fluo principal
-const Color veloxGreenBright = Color(0xFFC6FF3D); // variante lumineuse (glow/hover)
-const Color veloxGreenDeep = Color(0xFF6FA80C);   // vert profond (pressed)
+const Color veloxGreen = Color(0xFFA6E22E); // vert fluo principal
+const Color veloxGreenBright =
+    Color(0xFFC6FF3D); // variante lumineuse (glow/hover)
+const Color veloxGreenDeep = Color(0xFF6FA80C); // vert profond (pressed)
 
 // Noirs / surfaces sombres
-const Color veloxBlack = Color(0xFF000000);       // noir pur (sidebar)
-const Color veloxNearBlack = Color(0xFF0A0A0A);   // fond principal
-const Color veloxSurface = Color(0xFF161616);     // cartes
-const Color veloxSurfaceAlt = Color(0xFF1E1E1E);  // surfaces élevées / champs
+const Color veloxBlack = Color(0xFF000000); // noir pur (sidebar)
+const Color veloxNearBlack = Color(0xFF0A0A0A); // fond principal
+const Color veloxSurface = Color(0xFF161616); // cartes
+const Color veloxSurfaceAlt = Color(0xFF1E1E1E); // surfaces élevées / champs
 
 // Tokens sémantiques (noms conservés pour compatibilité avec tout le code)
-const Color primaryColor = veloxGreen;            // accent principal = vert fluo
-const Color secondaryColor = veloxSurfaceAlt;     // gris très foncé
-const Color accentColor = veloxGreenBright;       // accent lumineux
-const Color backgroundColor = veloxNearBlack;     // fond quasi noir
-const Color cardColor = veloxSurface;             // surface de carte
-const Color sidebarColor = veloxBlack;            // noir pur
-const Color textDarkColor = Color(0xFFF5F5F5);    // texte principal (clair sur fond sombre)
-const Color textLightColor = Color(0xFF9AA0A6);   // texte secondaire
+const Color primaryColor = veloxGreen; // accent principal = vert fluo
+const Color secondaryColor = veloxSurfaceAlt; // gris très foncé
+const Color accentColor = veloxGreenBright; // accent lumineux
+const Color backgroundColor = veloxNearBlack; // fond quasi noir
+const Color cardColor = veloxSurface; // surface de carte
+const Color sidebarColor = veloxBlack; // noir pur
+const Color textDarkColor =
+    Color(0xFFF5F5F5); // texte principal (clair sur fond sombre)
+const Color textLightColor = Color(0xFF9AA0A6); // texte secondaire
 const Color successColor = Color(0xFF4CAF50);
 const Color warningColor = Color(0xFFFFC107);
 const Color errorColor = Color(0xFFFF5252);
 const Color infoColor = veloxGreen;
 
 // Chemin du logo (déclaré dans pubspec.yaml)
-const String veloxLogoAsset = 'logo/logo_velox.png';
+const String veloxLogoAsset = 'logo/Logo-Velox-FINAL.png';
+
+// Clé publique VAPID pour le push navigateur (FCM Web).
+// Firebase Console → Paramètres du projet → Cloud Messaging → Certificats Web Push.
+const String webPushVapidKey =
+    'BMYyah2TlEPfqHpAn3z0G1ucaDQuA64L1QyroBtOwAvTkBeWxsnlvMKJ850-SQNZS8oqFAhODwn1sHLeHRf5bjo';
 
 // PADDING
 const double defaultPadding = 16.0;
@@ -75,7 +82,8 @@ const TextStyle captionStyle = TextStyle(
   color: textLightColor,
 );
 
-const TextStyle buttonStyle = TextStyle( // AJOUTÉ
+const TextStyle buttonStyle = TextStyle(
+  // AJOUTÉ
   fontSize: 14,
   fontWeight: FontWeight.w500,
   color: Colors.white,
@@ -161,7 +169,8 @@ class Messages {
 // URLS
 class Urls {
   static const String openStreetMap = 'https://www.openstreetmap.org';
-  static const String openStreetMapTile = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  static const String openStreetMapTile =
+      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
   static const String openStreetMapCopyright = 'OpenStreetMap contributors';
   static const String privacyPolicy = 'https://velox.dj/privacy';
   static const String termsOfService = 'https://velox.dj/terms';
@@ -218,8 +227,10 @@ double screenHeight(BuildContext context) => MediaQuery.of(context).size.height;
 
 // Helper pour les espacements
 EdgeInsets getPaddingAll(double padding) => EdgeInsets.all(padding);
-EdgeInsets getPaddingHorizontal(double padding) => EdgeInsets.symmetric(horizontal: padding);
-EdgeInsets getPaddingVertical(double padding) => EdgeInsets.symmetric(vertical: padding);
+EdgeInsets getPaddingHorizontal(double padding) =>
+    EdgeInsets.symmetric(horizontal: padding);
+EdgeInsets getPaddingVertical(double padding) =>
+    EdgeInsets.symmetric(vertical: padding);
 EdgeInsets getPaddingSymmetric({double horizontal = 0, double vertical = 0}) =>
     EdgeInsets.symmetric(horizontal: horizontal, vertical: vertical);
 EdgeInsets getPaddingOnly({
@@ -227,12 +238,13 @@ EdgeInsets getPaddingOnly({
   double top = 0,
   double right = 0,
   double bottom = 0,
-}) => EdgeInsets.only(
-  left: left,
-  top: top,
-  right: right,
-  bottom: bottom,
-);
+}) =>
+    EdgeInsets.only(
+      left: left,
+      top: top,
+      right: right,
+      bottom: bottom,
+    );
 
 // Helper pour les box shadows
 List<BoxShadow> getBoxShadow({
@@ -241,32 +253,33 @@ List<BoxShadow> getBoxShadow({
   double blurRadius = 4.0,
   double offsetX = 0.0,
   double offsetY = 2.0,
-}) => [
-  BoxShadow(
-    color: color.withValues(alpha: opacity),
-    blurRadius: blurRadius,
-    offset: Offset(offsetX, offsetY),
-  ),
-];
+}) =>
+    [
+      BoxShadow(
+        color: color.withValues(alpha: opacity),
+        blurRadius: blurRadius,
+        offset: Offset(offsetX, offsetY),
+      ),
+    ];
 
 // Helper pour les gradients
 LinearGradient getPrimaryGradient() => LinearGradient(
-  colors: [
-    primaryColor,
-    accentColor,
-  ],
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-);
+      colors: [
+        primaryColor,
+        accentColor,
+      ],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    );
 
 LinearGradient getSecondaryGradient() => LinearGradient(
-  colors: [
-    secondaryColor.withValues(alpha: 0.8),
-    secondaryColor,
-  ],
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-);
+      colors: [
+        secondaryColor.withValues(alpha: 0.8),
+        secondaryColor,
+      ],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    );
 
 // Validations
 class Validators {

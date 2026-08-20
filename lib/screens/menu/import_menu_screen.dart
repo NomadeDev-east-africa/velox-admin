@@ -94,11 +94,10 @@ class _ImportMenuScreenState extends State<ImportMenuScreen> {
 
   void _parse() {
     // JSON standard d'abord (déterministe), sinon parser texte heuristique.
+    // La grille tarifaire (marge par tranche, < 300 = 0) est appliquée à chaque
+    // prix directement pendant le parsing.
     final raw = _textController.text;
     final parsed = MenuJsonParser.tryParse(raw) ?? MenuParser.parse(raw);
-    // Grille tarifaire : marge par tranche, appliquée aux SEULS plats principaux
-    // (boissons, frites et choix d'options gardent le prix brut resto).
-    MenuParser.applyPricingGrid(parsed);
     setState(() {
       _parsed = parsed;
       _categoryImages.clear();
@@ -244,7 +243,8 @@ class _ImportMenuScreenState extends State<ImportMenuScreen> {
               'libre. La standardisation s\'applique automatiquement :\n'
               '• le préfixe « Nos » est retiré des catégories (« Nos Burgers » → « Burgers ») ;\n'
               '• chaque catégorie est mise au pluriel (« Glace » → « Glaces ») ;\n'
-              '• tous les prix sont majorés de 10 % puis arrondis à la centaine.\n'
+              '• une marge par tranche de prix s\'applique à chaque article '
+              '(tout article < 300 FDJ : aucune commission).\n'
               'L\'aperçu reste entièrement modifiable avant l\'import.',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),

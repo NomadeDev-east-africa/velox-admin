@@ -350,3 +350,183 @@ Suppléments propres) ; Boissons/Desserts sans supplément.
 - Lancer l'app admin, uploader 2-3 images bibliothèque, créer des catégories,
   importer le menu STR'EAT, vérifier dans Firestore que `menuItems` ont bien
   `imageUrl` (image catégorie) + `optionGroups`.
+
+---
+
+## ✅ FAIT 2026-08-01/02 — Suivi de commandes complet, blocage comptes, page Statistiques, VTC — compile (`flutter analyze` OK), **déployé** sur https://nomade253-478a9.web.app
+
+> Session sans rapport avec le menu (hors-sujet de ce fichier, ajouté ici à la demande
+> de l'utilisateur — « dernier fichier travaux »). Aucune modif du schéma menu ci-dessus.
+
+### ⚠️ Découverte importante — doublon de projet hors git
+`C:\Users\PC\Desktop\ReelADMIN\NOMADE_ADMIN_COMPLETE` (sans `ADMIN3`) est une **copie
+figée non versionnée** (pas de `.git`, dernière modif 24/01/2026) du même projet.
+Plusieurs captures d'écran de l'utilisateur pendant cette session provenaient de vieux
+`flutter run` lancés depuis ce doublon → confusion « mes changements n'apparaissent pas ».
+**Le seul dossier à utiliser est `...\ADMIN3\NOMADE_ADMIN_COMPLETE`** (connecté à
+`github.com/NomadeDev-east-africa/velox-admin`).
+
+### Suivi de commandes (fusion Commandes + Suivi livraisons)
+- **NOUVEAU** `lib/models/order_tracking.dart` — `OrderTracking`/`OrderPhase`/`DelayLevel`,
+  phase dérivée des timestamps Firestore existants (`acceptedAt/readyAt/assignedAt/
+  pickedUpAt/deliveredAt/cancelledAt`), pas du champ `status` (peu fiable). Budgets :
+  **25 min préparation resto**, **15 min trajet livreur→resto**, 30 min livraison (existant).
+- `lib/screens/orders/orders_screen.dart` — réécrit : écran unique, filtres par phase,
+  badge coloré + délai, recherche, alerte sonore + **titre d'onglet** (`🔴 (N) …`) sur
+  passage en critique, dialog détail avec les 5 timestamps, bouton **Annuler toujours
+  visible** (grisé + tooltip si commande déjà terminée — corrige un bouton invisible en
+  pratique car quasi toutes les commandes réelles sont déjà `completed`/`cancelled`).
+- **Supprimés** : `lib/screens/deliveries/delivery_tracking_screen.dart`,
+  `lib/models/delivery_tracking.dart` (remplacés). Sidebar/`dashboard_screen.dart` : entrée
+  « Suivi livraisons » retirée, « Commandes » pointe vers l'écran fusionné.
+
+### Page Restaurants (`restaurants_list_screen.dart`)
+- Badge **« Commande en cours »** (+ compteur, coloré selon dépassement du budget 25 min)
+  à côté du statut Ouvert/Fermé — dérivé d'un stream `orders` filtré côté client
+  (`OrderPhase.preparing`), même logique que ci-dessus.
+- Colonne **Actions déplacée en 1re position** (comme `livreurs_list_screen.dart`) +
+  `Scrollbar(thumbVisibility: true)` sur le tableau desktop : elle sortait de l'écran sans
+  indice qu'il fallait scroller.
+
+### Page Restaurant seul (`restaurant_details_screen.dart`)
+- Nouvelle section **« Historique des commandes »** : filtres Jour/Mois/Année/Tout, avec
+  **sélecteurs mois + année** (menus déroulants, années dérivées des vraies commandes du
+  resto) quand Mois/Année est choisi. Stats (total/livrées/CA) + liste détaillée
+  (date/client/statut/prix), calculées en direct depuis `orders` — indépendant des
+  compteurs `totalOrders`/`totalRevenue` du doc resto (potentiellement obsolètes).
+
+### Blocage de comptes (pattern identique partout : toggle `isActive`, confirmation, badge « Bloqué »)
+- `lib/screens/livreur/livreurs_list_screen.dart`, `lib/screens/drivers/drivers_list_screen.dart` —
+  action Bloquer/Débloquer ajoutée (le champ `isActive` existait déjà dans les modèles,
+  seule l'UI manquait).
+- `lib/screens/users/users_screen.dart` — champ `isActive` **inexistant avant** sur `users`
+  (défaut `true` si absent) ; ajout complet blocage + colonne Statut + carte mobile
+  cliquable (n'avait aucune action avant).
+  **Limite connue** : ce flag n'est vérifié nulle part côté app client (contrairement à
+  `Restaurant.isActive` → `isOpenNowEffective`) — poser la question si un vrai blocage
+  (empêcher connexion/commande) est voulu, il faudra modifier l'app cliente séparément.
+- Restaurants : blocage **déjà existant** avant cette session (`RestaurantService.toggleActive`),
+  confirmé fonctionnel par l'utilisateur.
+
+### Courses VTC (`taxi_rides_screen.dart`)
+- Bouton **Annuler** ajouté (n'existait pas du tout), même pattern que Commandes :
+  toujours visible, grisé+tooltip si déjà terminée/annulée, écrit `status: cancelled` +
+  `cancellationReason` + `cancelledAt`. Colonne Actions déplacée en 1re position.
+
+### Page Statistiques (`lib/screens/stats/statistics_screen.dart`) — NOUVELLE, remplace le placeholder « À venir »
+`dashboard_screen.dart` : `case 'stats'` ne renvoyait qu'un `Text('Statistiques (À venir)')`
+— rien n'avait jamais été construit. Nouvel écran (StreamBuilders imbriqués, comptage
+client-side, pas de dépendance graphique) : Restaurants/Livreurs/Chauffeurs/Clients
+(total+actifs), Commandes (sur les 500 dernières : total/livrées/annulées/en cours + CA),
+**Courses VTC** (idem, ajouté en fin de session), Top 5 restaurants.
+
+### Dashboard (`dashboard_home.dart`)
+Cartes stats refaites : **Chauffeurs actifs, Livreurs actifs, Restaurants actifs, nombre
+de Commandes, nombre de Courses** — remplace 2 cartes qui affichaient des `0` codés en dur
+(Courses, Revenus).
+
+### Logo
+`constants.dart` (`veloxLogoAsset`) + `pubspec.yaml` (assets) : basculé sur
+`logo/Logo-Velox-FINAL.png` (fourni par l'utilisateur, déjà présent dans `logo/`).
+
+### Déploiements
+`firebase deploy --only hosting` (projet `nomade253-478a9`) exécuté **2 fois** pendant la
+session — dernière version en ligne inclut tout ce qui précède.
+
+## 🔜 RESTE À FAIRE (identifié cette session, PAS encore fait)
+
+1. **Règles Firestore `users` — FAIT côté fichier, déploiement à la charge de l'utilisateur.**
+   `C:\Users\PC\Desktop\FINAL 253 NOMADE\client app\production\firestores regles unique\firestore_rules.rules`,
+   bloc `match /users/{userId}` : `allow delete` ET `allow update` ont maintenant `|| isAdmin()`
+   (manquaient tous les deux → bouton Bloquer de l'admin échouait en "insufficient permissions").
+   Fichier modifié, mais **pas de `.firebaserc` dans ce dossier** → déployer avec
+   `firebase deploy --only firestore:rules --project nomade253-478a9`.
+2. Éventuellement étendre le blocage `users.isActive` côté app client (`Velox_Client`) pour
+   qu'il soit réellement contraignant (cf. limite connue plus haut : le flag n'est vérifié
+   nulle part côté client aujourd'hui, contrairement à `Restaurant.isActive`).
+3. Reste ouvert de `travaux4.md` : app client `optionGroups` data-driven (non traité cette
+   session).
+4. **Suppression complète d'un `user` (Firestore + Auth) — pas construit.** Supprimer le doc
+   Firestore ne supprime pas le compte Firebase Auth (le SDK client ne peut supprimer que le
+   compte *actuellement connecté*, jamais celui d'un tiers par UID). Il faut une Cloud Function
+   Admin SDK (`admin.auth().deleteUser(uid)` + suppression doc/sous-collections), à ajouter dans
+   `nomade_client/functions/index.js` (même fichier que `sendFCMNotification` etc.) + un bouton
+   Supprimer côté `users_screen.dart` (n'existe pas encore, seul Bloquer/Débloquer a été ajouté).
+5. **Notifications broadcast (promos / annonces) depuis l'admin — pas construit.** Infra FCM
+   déjà en place (`nomade_client/functions/index.js` : `sendFCMNotification` envoie à **un seul
+   token**, pas de broadcast ; `users.fcmToken` existe déjà) mais :
+   - aucune Cloud Function pour envoyer à plusieurs utilisateurs (prévoir
+     `sendBroadcastNotification`, protégée `isAdmin()`, boucle `sendEachForMulticast` par lots
+     de 500 tokens sur `users` filtrés par `fcmToken` non nul) ;
+   - aucun écran admin (`lib/`) pour composer/envoyer — à créer : titre + message, choix
+     d'audience (clients / restaurants / livreurs / chauffeurs), bouton Envoyer, retour
+     succès/échecs. Question ouverte posée à l'utilisateur : quelles audiences en plus des
+     clients ? Pas encore répondu.
+
+## ✅ FAIT 2026-08-10 — Notifications broadcast depuis l'admin — compile (`flutter analyze` OK)
+
+Reprend le point 5 ci-dessus. Audiences retenues (réponse à la question ouverte) : les 4 —
+**clients, restaurants, livreurs, chauffeurs**.
+
+- `nomade_client/functions/index.js` — NOUVEAU `exports.sendBroadcastNotification` (`onCall`,
+  après `sendFCMNotification`) : vérifie `admins/{uid}.role` ∈ {admin, super_admin} (aucune
+  autre fonction `onCall` du fichier ne faisait ce contrôle — nécessaire ici car la fonction
+  peut toucher toute la base). Mapping audience → collection (`clients→users`,
+  `restaurants→restaurants`, `livreurs→livreurs`, `drivers→drivers`), lots de 500 tokens
+  (`sendEachForMulticast`), nettoyage des tokens périmés (`fcmToken: null`) même pattern que
+  le reste du fichier. Retourne `{ perAudience: {audience: {targeted,sent,failed}}, totalSent,
+  totalFailed }`.
+- Admin (`NOMADE_ADMIN_COMPLETE`) :
+  - `pubspec.yaml` — ajout `cloud_functions: ^5.1.0` (résolu en 5.6.2), première dépendance
+    Cloud Functions de l'admin.
+  - `lib/screens/notifications/broadcast_notification_screen.dart` — NOUVEAU : formulaire
+    titre/message + 4 `CheckboxListTile` audiences, dialog de confirmation avant envoi (action
+    irréversible), appel `httpsCallable('sendBroadcastNotification')`, dialog de résultat
+    sent/failed par audience.
+  - `lib/widgets/sidebar.dart` + `lib/screens/dashboard/dashboard_screen.dart` — entrée
+    sidebar « Notifications » câblée.
+
+**Reste à faire** : déployer la fonction (pas fait automatiquement, même logique que les
+règles Firestore ci-dessus) :
+`firebase deploy --only functions:sendBroadcastNotification --project nomade253-478a9`
+depuis `nomade_client/functions`. Puis tester un envoi réel (1 audience) depuis l'admin.
+
+## ✅ FAIT 2026-08-10 (suite) — Push navigateur : admin notifié des nouvelles commandes/courses VTC — compile (`flutter analyze` OK)
+
+Distinct du broadcast ci-dessus : ici c'est l'**admin qui reçoit**, en push navigateur réel
+(FCM Web, même onglet fermé), à chaque nouvelle commande ou nouvelle course VTC créée.
+Clé VAPID fournie par l'utilisateur et intégrée.
+
+- `nomade_client/functions/index.js` :
+  - `admins/{uid}` n'avait pas de champ `fcmToken` (règle `allow write: if false`, réservé à
+    l'Admin SDK) → NOUVEAU `exports.registerAdminFcmToken` (`onCall`, même contrôle de rôle
+    que `sendBroadcastNotification`) écrit `fcmToken`/`fcmTokenUpdatedAt` via l'Admin SDK, pas
+    de changement de règles Firestore nécessaire.
+  - NOUVEAU helper interne `notifyAdmins(title, body, data)` — lit `admins`, réutilise
+    `chunk()` + `sendEachForMulticast` (500/lot) + nettoyage token périmé, même pattern que
+    `sendBroadcastNotification`.
+  - `onOrderCreated` et `onTaxiRideCreated` — appellent `notifyAdmins(...)` chacun dans son
+    propre `try/catch` (isolé : ne doit jamais impacter la validation des prix, la notif
+    restaurant ou l'assignation chauffeur existantes).
+- Admin (`NOMADE_ADMIN_COMPLETE`) :
+  - `pubspec.yaml` — ajout `firebase_messaging` (résolu 15.2.10).
+  - NOUVEAU `web/firebase-messaging-sw.js` — service worker (config copiée de
+    `firebase_options.dart`) : gère la notification système quand l'onglet est
+    fermé/arrière-plan.
+  - `lib/constants.dart` — NOUVELLE constante `webPushVapidKey` (clé VAPID en clair : c'est
+    la clé **publique**, pas un secret, cohérent avec `apiKey` déjà en dur dans
+    `firebase_options.dart`).
+  - NOUVEAU `lib/services/admin_push_notifications_service.dart` — `initialize()`
+    (no-op hors web) : demande permission → `getToken(vapidKey:...)` → callable
+    `registerAdminFcmToken` ; réabonnement sur `onTokenRefresh` ; expose un
+    `Stream<RemoteMessage>` pour les messages reçus **premier plan** (onglet ouvert — le cas
+    arrière-plan est géré nativement par le service worker, pas par du code Dart).
+  - `lib/screens/dashboard/dashboard_screen.dart` — après `_loadAdminInfo()` réussi : init du
+    service + abonnement au stream premier-plan → `SnackBar` (annulé dans `dispose()`).
+
+**Reste à faire** :
+1. Déployer : `firebase deploy --only functions:registerAdminFcmToken,functions:onOrderCreated,functions:onTaxiRideCreated --project nomade253-478a9`
+   puis `firebase deploy --only hosting` (pour que `firebase-messaging-sw.js` soit servi).
+2. Test réel : ouvrir l'admin dans Chrome, accepter la permission notification, créer une
+   commande/course de test, vérifier réception onglet ouvert (SnackBar) ET onglet
+   arrière-plan (notification système).

@@ -118,11 +118,6 @@ class Sidebar extends StatelessWidget {
                   page: 'orders',
                 ),
                 _buildMenuItem(
-                  icon: Icons.timer_outlined,
-                  title: 'Suivi livraisons',
-                  page: 'deliveries',
-                ),
-                _buildMenuItem(
                   icon: Icons.people_outline,
                   title: 'Utilisateurs',
                   page: 'users',
@@ -131,6 +126,16 @@ class Sidebar extends StatelessWidget {
                   icon: Icons.analytics,
                   title: 'Statistiques',
                   page: 'stats',
+                ),
+                _buildMenuItem(
+                  icon: Icons.campaign,
+                  title: 'Notifications',
+                  page: 'notifications',
+                ),
+                _buildMenuItem(
+                  icon: Icons.sell_outlined,
+                  title: 'Codes promo',
+                  page: 'promoCodes',
                 ),
               ],
             ),

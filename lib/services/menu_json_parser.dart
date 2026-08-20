@@ -178,7 +178,8 @@ class MenuJsonParser {
   /// - `maxChoices`/`max`/`nombre` : plafond de sélection pour un groupe multiple
   ///   (ex. Tacos XL → 2). Ignoré pour un groupe `single`. Défaut 0 = illimité.
   /// - `choix`/`choices` : liste d'objets `{nom, prix}` ou de simples chaînes.
-  /// - `prix` d'un choix = supplément (0 = inclus). Passe par le même markup +10 %.
+  /// - `prix` d'un choix = supplément (0 = inclus). Un choix d'option ne reçoit
+  ///   AUCUNE marge (contrairement aux plats principaux).
   static List<OptionGroup> _parseOptions(dynamic raw) {
     if (raw is! List) return const [];
     final groups = <OptionGroup>[];
@@ -220,16 +221,21 @@ class MenuJsonParser {
     return groups;
   }
 
-  // Prix BRUT (aucune marge ici). La grille tarifaire est appliquée en une
-  // passe unique après le parsing, via [MenuParser.applyPricingGrid], qui seule
-  // sait distinguer plat principal / boisson / frite / option.
+  // Tous les prix passent par la grille [MenuParser.markupPrice] : règle unique
+  // « < 300 → +0, sinon marge par tranche », appliquée à chaque article (plats
+  // ET choix d'options — la règle < 300 exempte d'elle-même sauces/suppléments).
   static int _toInt(dynamic v) {
-    if (v is int) return v;
-    if (v is num) return v.round();
-    if (v is String) {
-      return int.tryParse(v.replaceAll(RegExp(r'[^\d]'), '')) ?? 0;
+    int raw;
+    if (v is int) {
+      raw = v;
+    } else if (v is num) {
+      raw = v.round();
+    } else if (v is String) {
+      raw = int.tryParse(v.replaceAll(RegExp(r'[^\d]'), '')) ?? 0;
+    } else {
+      raw = 0;
     }
-    return 0;
+    return MenuParser.markupPrice(raw);
   }
 
   static int? _toIntOrNull(dynamic v) {

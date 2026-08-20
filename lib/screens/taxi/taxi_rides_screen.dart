@@ -26,6 +26,7 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
     if (dt == null) return 'N/A';
     return DateFormat(pattern).format(dt);
   }
+
   String _searchQuery = '';
 
   static const _statusList = [
@@ -45,6 +46,9 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
     'completed': 'Terminée',
     'cancelled': 'Annulée',
   };
+
+  bool _isTerminal(String status) =>
+      status == 'completed' || status == 'cancelled';
 
   Color _statusColor(String status) {
     switch (status) {
@@ -94,16 +98,13 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
                       child: FilterChip(
                         label: Text(_statusLabels[s]!),
                         selected: selected,
-                        onSelected: (_) =>
-                            setState(() => _filterStatus = s),
+                        onSelected: (_) => setState(() => _filterStatus = s),
                         selectedColor: primaryColor.withValues(alpha: 0.2),
                         checkmarkColor: primaryColor,
                         labelStyle: TextStyle(
-                          color:
-                              selected ? primaryColor : Colors.grey.shade700,
-                          fontWeight: selected
-                              ? FontWeight.w600
-                              : FontWeight.normal,
+                          color: selected ? primaryColor : Colors.grey.shade700,
+                          fontWeight:
+                              selected ? FontWeight.w600 : FontWeight.normal,
                         ),
                       ),
                     );
@@ -229,6 +230,18 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
                     'Raison annulation: ${data['cancellationReason']}',
                     style: const TextStyle(color: errorColor),
                   ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.visibility, size: 20),
+                      onPressed: () => _showRideDetails(docs[i].id, data),
+                      tooltip: 'Voir détails',
+                    ),
+                    _cancelButton(docs[i].id, status),
+                  ],
+                ),
               ],
             ),
           ),
@@ -244,69 +257,78 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
-          columnSpacing: 24,
-          columns: const [
-            DataColumn(label: Text('Statut')),
-            DataColumn(label: Text('Date')),
-            DataColumn(label: Text('Passager')),
-            DataColumn(label: Text('Téléphone')),
-            DataColumn(label: Text('Type véhicule')),
-            DataColumn(label: Text('Tarif estimé')),
-            DataColumn(label: Text('Tarif final')),
-            DataColumn(label: Text('Chauffeur')),
-            DataColumn(label: Text('Actions')),
-          ],
-          rows: docs.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            final status = data['status'] ?? 'requested';
-            final requestedAt = data['requestedAt'] != null
-                ? _formatDate(data['requestedAt'], pattern: 'dd/MM HH:mm')
-                : 'N/A';
+            columnSpacing: 24,
+            columns: const [
+              // Actions en 1re colonne pour être toujours visibles sans avoir
+              // à scroller horizontalement (même pattern que livreurs/restaurants).
+              DataColumn(label: Text('Actions')),
+              DataColumn(label: Text('Statut')),
+              DataColumn(label: Text('Date')),
+              DataColumn(label: Text('Passager')),
+              DataColumn(label: Text('Téléphone')),
+              DataColumn(label: Text('Type véhicule')),
+              DataColumn(label: Text('Tarif estimé')),
+              DataColumn(label: Text('Tarif final')),
+              DataColumn(label: Text('Chauffeur')),
+            ],
+            rows: docs.map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              final status = data['status'] ?? 'requested';
+              final requestedAt = data['requestedAt'] != null
+                  ? _formatDate(data['requestedAt'], pattern: 'dd/MM HH:mm')
+                  : 'N/A';
 
-            return DataRow(cells: [
-              DataCell(
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: _statusColor(status),
-                        shape: BoxShape.circle,
+              return DataRow(cells: [
+                DataCell(
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.visibility, size: 20),
+                        onPressed: () => _showRideDetails(doc.id, data),
+                        tooltip: 'Voir détails',
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      _statusLabels[status] ?? status,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: _statusColor(status),
-                        fontWeight: FontWeight.w500,
+                      _cancelButton(doc.id, status),
+                    ],
+                  ),
+                ),
+                DataCell(
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: _statusColor(status),
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 4),
+                      Text(
+                        _statusLabels[status] ?? status,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: _statusColor(status),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              DataCell(Text(requestedAt)),
-              DataCell(Text(data['userName'] ?? 'N/A')),
-              DataCell(Text(data['userPhone'] ?? 'N/A')),
-              DataCell(Text(data['vehicleType'] ?? 'N/A')),
-              DataCell(Text(data['estimatedFare'] != null
-                  ? '${(data['estimatedFare'] as num).toStringAsFixed(0)} FDJ'
-                  : 'N/A')),
-              DataCell(Text(
-                  data['finalFare'] != null ? '${data['finalFare']} FDJ' : '-')),
-              DataCell(Text(data['driverName'] ?? '-')),
-              DataCell(
-                IconButton(
-                  icon: const Icon(Icons.visibility, size: 20),
-                  onPressed: () => _showRideDetails(doc.id, data),
-                  tooltip: 'Voir détails',
-                ),
-              ),
-            ]);
-          }).toList(),
+                DataCell(Text(requestedAt)),
+                DataCell(Text(data['userName'] ?? 'N/A')),
+                DataCell(Text(data['userPhone'] ?? 'N/A')),
+                DataCell(Text(data['vehicleType'] ?? 'N/A')),
+                DataCell(Text(data['estimatedFare'] != null
+                    ? '${(data['estimatedFare'] as num).toStringAsFixed(0)} FDJ'
+                    : 'N/A')),
+                DataCell(Text(data['finalFare'] != null
+                    ? '${data['finalFare']} FDJ'
+                    : '-')),
+                DataCell(Text(data['driverName'] ?? '-')),
+              ]);
+            }).toList(),
           ),
         ),
       ),
@@ -332,6 +354,70 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
     );
   }
 
+  /// Icône Annuler toujours rendue (jamais masquée) : grisée/désactivée sur
+  /// une course déjà terminée/annulée, avec un tooltip qui explique pourquoi
+  /// — même pattern que `orders_screen.dart` (`_cancelButton`).
+  Widget _cancelButton(String rideId, String status) {
+    final disabled = _isTerminal(status);
+    final tooltip = status == 'cancelled'
+        ? 'Course déjà annulée'
+        : status == 'completed'
+            ? 'Course déjà terminée'
+            : 'Annuler la course';
+    return IconButton(
+      icon: Icon(Icons.cancel,
+          size: 20, color: disabled ? Colors.grey.shade400 : errorColor),
+      onPressed: disabled ? null : () => _confirmCancel(rideId),
+      tooltip: tooltip,
+    );
+  }
+
+  Future<void> _confirmCancel(String rideId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Annuler la course'),
+        content: const Text('Voulez-vous vraiment annuler cette course ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Non'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: errorColor),
+            child: const Text('Oui, annuler'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await _firestore.collection('taxiRides').doc(rideId).update({
+          'status': 'cancelled',
+          'cancellationReason': 'Annulée par l\'administrateur',
+          'cancelledAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Course annulée'),
+              backgroundColor: successColor,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur: $e'), backgroundColor: errorColor),
+          );
+        }
+      }
+    }
+  }
+
   void _showRideDetails(String id, Map<String, dynamic> data) {
     showDialog(
       context: context,
@@ -349,7 +435,8 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               _detailRow('ID', id),
-              _detailRow('Statut', _statusLabels[data['status']] ?? data['status']),
+              _detailRow(
+                  'Statut', _statusLabels[data['status']] ?? data['status']),
               _detailRow('Passager', data['userName']),
               _detailRow('Téléphone', data['userPhone']),
               _detailRow('Type', data['vehicleType']),

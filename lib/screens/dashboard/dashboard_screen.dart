@@ -1,15 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../constants.dart';
+import '../../services/admin_push_notifications_service.dart';
 import '../../widgets/sidebar.dart';
 import '../drivers/drivers_list_screen.dart';
 import '../restaurants/restaurants_list_screen.dart';
 import '../categories/global_categories_screen.dart';
 import '../livreur/livreurs_list_screen.dart';
 import '../map/maps_screen.dart';
+import '../notifications/broadcast_notification_screen.dart';
 import '../orders/orders_screen.dart';
-import '../deliveries/delivery_tracking_screen.dart';
+import '../promo/promo_codes_screen.dart';
+import '../stats/statistics_screen.dart';
 import '../taxi/taxi_rides_screen.dart';
 import '../users/users_screen.dart';
 import 'dashboard_home.dart';
@@ -23,14 +29,21 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  
+
   String _currentPage = 'home';
   String _adminName = 'Admin';
+  StreamSubscription<RemoteMessage>? _pushMessagesSub;
 
   @override
   void initState() {
     super.initState();
     _loadAdminInfo();
+  }
+
+  @override
+  void dispose() {
+    _pushMessagesSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadAdminInfo() async {
@@ -47,10 +60,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
         setState(() {
           _adminName = adminDoc.data()?['name'] ?? 'Admin';
         });
+        await AdminPushNotificationsService.instance.initialize();
+        _pushMessagesSub = AdminPushNotificationsService
+            .instance.foregroundMessages
+            .listen(_onPushMessage);
       }
     } catch (e) {
       debugPrint('Erreur chargement admin: $e');
     }
+  }
+
+  void _onPushMessage(RemoteMessage message) {
+    if (!mounted) return;
+    final title = message.notification?.title ?? 'Notification';
+    final body = message.notification?.body ?? '';
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearMaterialBanners();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        backgroundColor: primaryColor,
+        dividerColor: veloxGreenDeep,
+        padding: const EdgeInsets.symmetric(
+          horizontal: largePadding,
+          vertical: largePadding,
+        ),
+        leading: const Icon(Icons.notifications_active,
+            color: veloxBlack, size: extraLargeIconSize),
+        content: Text(
+          '$title\n$body',
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            height: 1.4,
+            color: veloxBlack,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => messenger.hideCurrentMaterialBanner(),
+            style: TextButton.styleFrom(foregroundColor: veloxBlack),
+            child: const Text('Fermer',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    Future.delayed(const Duration(seconds: 20), () {
+      if (mounted) messenger.hideCurrentMaterialBanner();
+    });
   }
 
   void _changePage(String page) {
@@ -79,12 +136,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return const TaxiRidesScreen();
       case 'orders':
         return const OrdersScreen();
-      case 'deliveries':
-        return const DeliveryTrackingScreen();
       case 'users':
         return const UsersScreen();
       case 'stats':
-        return const Center(child: Text('Statistiques (À venir)'));
+        return const StatisticsScreen();
+      case 'notifications':
+        return const BroadcastNotificationScreen();
+      case 'promoCodes':
+        return const PromoCodesScreen();
       default:
         return const DashboardHome();
     }
@@ -168,7 +227,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               currentPage: _currentPage,
               onPageChanged: _changePage,
             ),
-          
+
           // Contenu principal
           Expanded(
             child: Container(
@@ -198,13 +257,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'rides':
         return 'Courses Taxi';
       case 'orders':
-        return 'Commandes';
-      case 'deliveries':
-        return 'Suivi livraisons';
+        return 'Suivi des commandes';
       case 'users':
         return 'Utilisateurs';
       case 'stats':
         return 'Statistiques';
+      case 'notifications':
+        return 'Notifications';
+      case 'promoCodes':
+        return 'Codes promo';
       default:
         return 'Velox Admin';
     }
