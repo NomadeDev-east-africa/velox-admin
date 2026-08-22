@@ -137,6 +137,11 @@ class Sidebar extends StatelessWidget {
                   title: 'Codes promo',
                   page: 'promoCodes',
                 ),
+                _buildMenuItem(
+                  icon: Icons.view_carousel_outlined,
+                  title: 'Bannières',
+                  page: 'banners',
+                ),
               ],
             ),
           ),

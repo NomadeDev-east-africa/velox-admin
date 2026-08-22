@@ -13,6 +13,7 @@ import '../categories/global_categories_screen.dart';
 import '../livreur/livreurs_list_screen.dart';
 import '../map/maps_screen.dart';
 import '../notifications/broadcast_notification_screen.dart';
+import '../banners/banners_screen.dart';
 import '../orders/orders_screen.dart';
 import '../promo/promo_codes_screen.dart';
 import '../stats/statistics_screen.dart';
@@ -144,6 +145,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return const BroadcastNotificationScreen();
       case 'promoCodes':
         return const PromoCodesScreen();
+      case 'banners':
+        return const BannersScreen();
       default:
         return const DashboardHome();
     }
@@ -266,6 +269,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return 'Notifications';
       case 'promoCodes':
         return 'Codes promo';
+      case 'banners':
+        return 'Bannières';
       default:
         return 'Velox Admin';
     }

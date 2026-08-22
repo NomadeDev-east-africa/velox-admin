@@ -23,6 +23,7 @@ class PromoCode {
   final DateTime? expiresAt; // null = pas d'expiration
   final bool active;
   final int usageCount; // incrémenté uniquement côté serveur (Cloud Function)
+  final num totalDiscountGiven; // FDJ cumulés, incrémenté côté serveur
   final DateTime? createdAt;
   final String? createdBy;
 
@@ -35,6 +36,7 @@ class PromoCode {
     this.expiresAt,
     this.active = true,
     this.usageCount = 0,
+    this.totalDiscountGiven = 0,
     this.createdAt,
     this.createdBy,
   });
@@ -54,6 +56,7 @@ class PromoCode {
       expiresAt: (data['expiresAt'] as Timestamp?)?.toDate(),
       active: data['active'] as bool? ?? true,
       usageCount: (data['usageCount'] as num?)?.toInt() ?? 0,
+      totalDiscountGiven: (data['totalDiscountGiven'] as num?) ?? 0,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       createdBy: data['createdBy'] as String?,
     );

@@ -129,7 +129,8 @@ class _PromoCodesScreenState extends State<PromoCodesScreen> {
                   children: [
                     _statusBadge(promo),
                     const SizedBox(width: 8),
-                    Text('${promo.usageCount} utilisation(s)',
+                    Text(
+                        '${promo.usageCount} utilisation(s) • ${Formatters.formatCurrency(promo.totalDiscountGiven.toDouble())} remisés',
                         style: const TextStyle(fontSize: 11)),
                   ],
                 ),
@@ -188,6 +189,7 @@ class _PromoCodesScreenState extends State<PromoCodesScreen> {
               DataColumn(label: Text('Portée')),
               DataColumn(label: Text('Expiration')),
               DataColumn(label: Text('Utilisations')),
+              DataColumn(label: Text('Total remisé')),
             ],
             rows: promoCodes.map((promo) {
               return DataRow(cells: [
@@ -229,6 +231,8 @@ class _PromoCodesScreenState extends State<PromoCodesScreen> {
                     ? Formatters.formatDate(promo.expiresAt!)
                     : 'Sans expiration')),
                 DataCell(Text('${promo.usageCount}')),
+                DataCell(Text(
+                    Formatters.formatCurrency(promo.totalDiscountGiven.toDouble()))),
               ]);
             }).toList(),
           ),
