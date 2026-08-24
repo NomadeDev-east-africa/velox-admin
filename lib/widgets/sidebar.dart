@@ -142,6 +142,11 @@ class Sidebar extends StatelessWidget {
                   title: 'Bannières',
                   page: 'banners',
                 ),
+                _buildMenuItem(
+                  icon: Icons.local_taxi_outlined,
+                  title: 'Tarifs VTC',
+                  page: 'taxiPricing',
+                ),
               ],
             ),
           ),

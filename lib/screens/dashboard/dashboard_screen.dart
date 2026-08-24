@@ -14,6 +14,7 @@ import '../livreur/livreurs_list_screen.dart';
 import '../map/maps_screen.dart';
 import '../notifications/broadcast_notification_screen.dart';
 import '../banners/banners_screen.dart';
+import '../taxi_pricing/taxi_pricing_screen.dart';
 import '../orders/orders_screen.dart';
 import '../promo/promo_codes_screen.dart';
 import '../stats/statistics_screen.dart';
@@ -147,6 +148,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return const PromoCodesScreen();
       case 'banners':
         return const BannersScreen();
+      case 'taxiPricing':
+        return const TaxiPricingScreen();
       default:
         return const DashboardHome();
     }
@@ -271,6 +274,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return 'Codes promo';
       case 'banners':
         return 'Bannières';
+      case 'taxiPricing':
+        return 'Tarifs VTC';
       default:
         return 'Velox Admin';
     }

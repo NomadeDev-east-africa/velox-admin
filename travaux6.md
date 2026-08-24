@@ -1,9 +1,16 @@
-# Travaux 6 — Codes promo (admin → backend → client)
+# Travaux 6 — Codes promo (admin → backend → client) + bannières admin + tarifs VTC
 
-> Contexte de session pour reprise. Dernière mise à jour : 2026-08-20.
-> Suite de `travaux5.md` (notifications). Nouvelle fonctionnalité : **code promo**
-> créé depuis l'admin, appliqué par le client au checkout sur
-> (sous-total nourriture + frais de livraison).
+> Contexte de session pour reprise. Dernière mise à jour : 2026-08-23.
+> Suite de `travaux5.md` (notifications). Trois fonctionnalités livrées :
+> 1. **Code promo** créé depuis l'admin, appliqué par le client au checkout sur
+>    (sous-total nourriture + frais de livraison) — **déployé en prod (functions +
+>    règles + admin) le 22/08/2026**.
+> 2. **Bannières admin** (texte ou image) pour le carrousel promo de l'accueil app
+>    client, remplaçant les bannières codées en dur — **admin fait et déployé**,
+>    client Kotlin pas encore fait (prompt prêt).
+> 3. **Tarifs VTC admin** (config `config/taxiPricing`, tarif taxi Standard/Confort
+>    pilotable depuis l'admin) — **admin fait et déployé le 23/08/2026**, backend +
+>    apps clientes déjà prêts à lire ce document (fait avant cette session).
 
 ## Écosystème concerné cette session
 
@@ -128,15 +135,145 @@ auditée :
 aux deux apps, exactement comme la remise fidélité existante s'y propage déjà
 aujourd'hui sans code dédié. **Rien à faire dans ces deux repos.**
 
+## Format du code — décision finale (22/08/2026)
+
+L'utilisateur veut des codes personnalisés type `VLXISMO22` / `VLXPANDA01` /
+`VLXDEKA30` — déjà 100% compatibles avec la règle posée le 20/08 (alphanumérique,
+6+ caractères, pas de symbole). Aucun changement de code nécessaire, juste confirmé
+et testé directement depuis l'admin.
+
+## Suite du 22/08/2026 — anti-abus + total remisé (codes promo)
+
+Demandé par l'utilisateur en complément (parmi 4 idées proposées, 2 retenues :
+anti-abus + visibilité admin ; plafond de remise et restriction "1ère commande"
+écartés, pas nécessaires pour l'instant) :
+
+- **Anti-abus `validatePromoCode`** (`nomade_client/functions/index.js`) : nouvelle
+  collection `promoCodeAttempts/{uid}` (fenêtre glissante 15 min, 15 échecs max —
+  seuls les codes INVALIDES comptent, jamais un succès). Rejet immédiat
+  (`HttpsError resource-exhausted`) si la limite est atteinte, avant même de lire
+  `promoCodes`. Helpers `checkPromoAttemptLimit` / `recordFailedPromoAttempt`.
+- **Total remisé par code** : `promoCodes/{CODE}.totalDiscountGiven` (FDJ cumulés),
+  incrémenté dans la même transaction que `usageCount` lors de `onOrderCreated`.
+  Visible dans la liste admin (colonne desktop + ligne mobile).
+- Règles Firestore : `promoCodeAttempts` verrouillé (`allow read, write: if false`,
+  Cloud Functions/Admin SDK uniquement), même pattern que `promoCodeRedemptions`.
+- **Tout déployé** : `firebase deploy --only functions` (fait par l'utilisateur),
+  `firebase deploy --only firestore:rules,storage --project nomade253-478a9` (fait
+  par Claude, depuis `FINAL 253 NOMADE\...\firestores regles unique`), admin
+  buildé + déployé sur hosting (commit `0dfd669`, push + `flutter build web` +
+  `firebase deploy --only hosting`).
+
+## Nouvelle fonctionnalité — Bannières admin (22/08/2026)
+
+Analyse : `FoodHomeScreen.kt` (Velox_client) affichait 3 bannières **codées en
+dur** (`promoSlides`, lignes 98-110 + composable `PromoBanner` lignes 307-329),
+titre/sous-titre traduits en 5 langues via `strings.xml`, aucun support image,
+un seul `onClick` en dur (WhatsApp sur la 3e slide). Décision produit : **un seul
+champ texte** par bannière (pas de multi-langue) pour garder l'admin simple —
+tranché avec l'utilisateur, régression assumée sur la traduction auto.
+
+Schéma Firestore `banners/{id}` (doc ID auto, triable par glisser-déposer) :
+```
+type: "text"|"image", order, active,
+title, subtitle,                      // si type=text
+imageUrl, storagePath,                // si type=image (Storage banners/{ts}.jpg)
+actionType: "none"|"whatsapp"|"url"|"restaurant"|"category", actionValue,
+createdAt, updatedAt
+```
+
+**Admin (fait, `flutter analyze` clean, déployé)** :
+- `lib/models/banner_item.dart`, `lib/services/banner_service.dart` (CRUD + upload
+  Storage + `reorder()` en batch).
+- `lib/screens/banners/banners_screen.dart` — `ReorderableListView` (drag-to-reorder,
+  pas un tableau comme les autres écrans : l'ordre est le cœur de cet écran), toggle
+  actif, suppression (supprime aussi le fichier Storage).
+- `lib/screens/banners/add_edit_banner_screen.dart` — bascule Texte/Image, champs
+  conditionnels, sélecteur d'action avec champ conditionnel (numéro WhatsApp / URL /
+  dropdown restaurant via `RestaurantService` / dropdown catégorie via
+  `MenuManagementService.streamGlobalCategories()`).
+- Sidebar + dashboard : entrée « Bannières ».
+- Règles : `banners` dans Firestore (`allow read: if isAuth()`, écriture `isAdmin()`
+  — pas de secret à cacher, contrairement à `promoCodes`) et `banners/{fileName}`
+  dans Storage (même pattern que `restaurants/`, `livreurs/`).
+
+**Client (`Velox_client`, Kotlin) — PAS FAIT ici.** Prompt complet :
+`Velox_client\PROMPT_BANNERS_ADMIN.md`, avec références exactes trouvées cette
+session :
+- `FoodHomeScreen.kt` lignes 98-110 (`promoSlides` à supprimer), 155-159 (carrousel
+  à rendre conditionnel + brancher sur les 2 types), 300-329 (`PromoSlide`/
+  `PromoBanner` à remplacer par `TextBanner`/`ImageBanner`).
+- Nouveau `domain/model/Banner.kt` (mirroir `Restaurant.kt`), `data/remote/
+  BannerService.kt` (mirroir exact `RestaurantService.kt`, `callbackFlow` +
+  `addSnapshotListener`, **filtre `active` côté Kotlin pas dans la requête** pour
+  éviter un index composite Firestore — convention déjà en place dans le projet).
+- `FoodViewModels.kt` : ajouter `banners: StateFlow<List<Banner>>` dans
+  `RestaurantsViewModel` (mirroir `restaurants`/`popular`, lignes 36-43).
+- Dispatch d'action générique branché sur `onOpenRestaurant`/`onOpenCategory`
+  **déjà présents** comme paramètres de `FoodHomeScreen` (lignes 87-88) — pas de
+  nouvelle navigation à créer.
+- `coil.compose.AsyncImage` déjà importé (ligne 69, utilisé par `PopularCard`) —
+  pas de nouvelle dépendance pour les bannières image.
+
+## Nouvelle fonctionnalité — Tarifs VTC admin (23/08/2026)
+
+Contexte : `PROMPT_ADMIN_TAXI_PRICING.md` (à la racine du repo) décrivait un écran
+admin pour piloter le tarif VTC depuis Firestore (`config/taxiPricing`), en
+remplacement du tarif codé en dur côté clients. **Backend (`nomade_client/
+functions/index.js`, revalidation à `onTaxiRideCreated`/`onRideUpdated`) et apps
+clientes déjà mis à jour avant cette session** — seul l'écran admin manquait.
+Vérifié en début de session (`grep` sur `taxiPricing`/`basePrice` dans `lib/`) :
+rien n'existait encore, à intégrer tel quel depuis le prompt.
+
+Doc unique Firestore `config/taxiPricing` (pas de sous-collection) :
+```
+standard: { basePrice, includedKm, pricePerKm },
+comfort:  { basePrice, includedKm, pricePerKm }
+```
+Formule (identique au serveur) : `prix = basePrice + pricePerKm × max(0,
+distanceKm − includedKm)`. Doc absent en prod avant le premier "Enregistrer" —
+backend et clients ont déjà un repli par défaut, donc rien n'est cassé
+entre-temps.
+
+**Admin (fait, `flutter analyze` clean, déployé)** — mirroir du pattern `banners/`
+mais document unique (pas de collection, pas de drag-and-drop, pas d'upload
+image) :
+- `lib/models/taxi_pricing.dart` — `TaxiPricingTier`/`TaxiPricingConfig`
+  (`fromFirestore`/`toMap`), défauts `kDefaultStandardTier`/`kDefaultComfortTier`
+  synchronisés avec `DEFAULT_TAXI_PRICING` du backend, `priceForDistance()` pour
+  l'aperçu live.
+- `lib/services/taxi_pricing_service.dart` — `watchPricing()` (stream sur le doc)
+  + `savePricing()` (`set` avec `merge: true`, crée le doc s'il n'existe pas).
+- `lib/screens/taxi_pricing/taxi_pricing_screen.dart` — 2 cartes (Standard/
+  Confort, empilées sur mobile via `isMobile(context)`), 3 champs numériques
+  chacune, aperçu live recalculé à chaque frappe ("5 km → … FDJ · 10 km → … FDJ"),
+  bouton Enregistrer unique. Style repris de `banners_screen.dart`
+  (`constants.dart` : `defaultPadding`, `cardColor`, `primaryColor`,
+  `captionStyle`).
+- Sidebar (`lib/widgets/sidebar.dart`) + dashboard (`lib/screens/dashboard/
+  dashboard_screen.dart`, résolution du widget et du titre AppBar) : entrée
+  « Tarifs VTC ».
+- Règles Firestore déjà déployées avant cette session (collection `config` :
+  lecture `isAuth()`, écriture `isAdmin()`, même politique que `banners`) — rien
+  à toucher côté règles/Cloud Functions, conforme au "Ne pas faire" du prompt.
+- **Déployé** : `flutter build web --release` puis `firebase deploy --only
+  hosting` (projet `nomade253-478a9`) → https://nomade253-478a9.web.app.
+
 ## 🔜 Reste ouvert
 
-1. ~~Déployer `functions/index.js`~~ — **fait par l'utilisateur (20/08/2026)**.
-2. ~~Copier les règles Firestore mises à jour dans la console Firebase~~ — **fait
-   par l'utilisateur (20/08/2026)**.
-3. **App cliente `Velox_client`** : à faire par l'autre agent Claude Code, prompt prêt
-   (`Velox_client\PROMPT_PROMO_CODE_CLIENT.md`). L'utilisateur teste actuellement
-   (`npm run` côté client) l'application du code au checkout.
-4. Test de bout en bout une fois le client fait : créer un code depuis l'admin,
-   l'appliquer dans l'app, vérifier `usageCount` + `promoCodeRedemptions` + qu'une
-   deuxième tentative du même client est bien rejetée, et que `total` chez
-   resto/livreur reflète bien la remise (comportement attendu, pas de code à changer).
+1. ~~Déployer `functions/index.js`~~ — fait (20/08 par l'utilisateur, 22/08 relivré
+   avec anti-abus + total remisé, par l'utilisateur).
+2. ~~Copier/déployer les règles Firestore + Storage~~ — **fait par Claude via CLI
+   le 22/08/2026** (`firebase deploy --only firestore:rules,storage`), plus besoin
+   de copier-coller manuellement en console pour ce qui a été fait jusqu'ici.
+3. **App cliente `Velox_client`** : à faire par l'autre agent Claude Code — 2 prompts
+   en attente : `PROMPT_PROMO_CODE_CLIENT.md` (l'utilisateur teste actuellement en
+   local) et `PROMPT_BANNERS_ADMIN.md` (pas encore commencé).
+4. Test de bout en bout une fois le client fait, pour les deux features : codes
+   promo (usageCount/totalDiscountGiven/anti-abus/rejet 2e utilisation) et
+   bannières (création admin → apparition temps réel dans l'app, les 2 types, les
+   4 actions).
+5. ~~Écran admin Tarifs VTC~~ — **fait et déployé le 23/08/2026.** Reste à vérifier
+   en prod : créer/modifier le tarif depuis l'admin puis confirmer côté client que
+   le prix affiché/facturé suit bien la nouvelle config (aucune app cliente
+   retouchée cette session, la lecture était déjà en place).
