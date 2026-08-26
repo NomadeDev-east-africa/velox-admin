@@ -1,7 +1,7 @@
 # Travaux 6 — Codes promo (admin → backend → client) + bannières admin + tarifs VTC
 
-> Contexte de session pour reprise. Dernière mise à jour : 2026-08-23.
-> Suite de `travaux5.md` (notifications). Trois fonctionnalités livrées :
+> Contexte de session pour reprise. Dernière mise à jour : 2026-08-26.
+> Suite de `travaux5.md` (notifications). Cinq fonctionnalités livrées :
 > 1. **Code promo** créé depuis l'admin, appliqué par le client au checkout sur
 >    (sous-total nourriture + frais de livraison) — **déployé en prod (functions +
 >    règles + admin) le 22/08/2026**.
@@ -11,6 +11,12 @@
 > 3. **Tarifs VTC admin** (config `config/taxiPricing`, tarif taxi Standard/Confort
 >    pilotable depuis l'admin) — **admin fait et déployé le 23/08/2026**, backend +
 >    apps clientes déjà prêts à lire ce document (fait avant cette session).
+> 4. **Historique de notifications persistant** (`users/{uid}/notifications`) —
+>    backend (Cloud Functions + règles + index) **fait et déployé le 26/08/2026**,
+>    suite à un prompt reçu de l'agent iOS. Retour iOS écrit, prompt Android
+>    Kotlin écrit — client pas encore fait.
+> 5. **Fix : annulation admin ne libère pas le livreur** — corrigé et déployé
+>    (commit + push) le 26/08/2026.
 
 ## Écosystème concerné cette session
 
@@ -259,21 +265,122 @@ image) :
 - **Déployé** : `flutter build web --release` puis `firebase deploy --only
   hosting` (projet `nomade253-478a9`) → https://nomade253-478a9.web.app.
 
+## Nouvelle fonctionnalité — Historique de notifications persistant (26/08/2026)
+
+Origine : `PROMPT_NOTIFICATIONS_BACKEND.md` reçu dans **Downloads**, écrit par
+l'agent Claude iOS (Flutter, autre repo) qui venait de livrer son écran côté
+iOS — l'app iOS et Android partagent le même backend Firebase. Jusqu'ici les
+notifications ne partaient qu'en push FCM (perdu si balayé/purgé par l'OS).
+Objectif : persister chaque notification pour un historique + badge non-lu,
+sans toucher au push existant.
+
+**Backend (`nomade_client/functions/index.js`) — fait, `node --check` OK,
+déployé en prod le 26/08/2026** :
+- Nouvelle sous-collection `users/{uid}/notifications/{notificationId}`
+  (`type`, `title`, `body` complet, `createdAt`, `read`/`readAt` côté serveur,
+  `actionType`/`actionValue`, `imageUrl`, `campaignId`).
+- Helpers `persistClientNotification()` / `apnsWithCategory()` ajoutés juste
+  après `getClientFcmToken` (~ligne 92). Appelés dans la même exécution que
+  le push FCM existant, **9 points d'accroche** : `acceptRideTx`,
+  `sendNextDriverOffer` (no_driver_available), `onRideUpdated`
+  (driver_accepted/arriving/arrived, ride_started, ride_completed,
+  ride_cancelled par le chauffeur), `sendOrderReadyNotifications`. Chaque
+  envoi FCM concerné reçoit aussi `apns.payload.aps.category`
+  (`VELOX_ORDER`/`VELOX_RIDE`) — indispensable côté iOS pour l'affichage
+  dépliable en arrière-plan.
+- `sendBroadcastNotification` (callable existante, utilisée par
+  `broadcast_notification_screen.dart`) étendue : pour l'audience `"clients"`,
+  écrit désormais un doc par compte via `BulkWriter`, ID = `campaignId`
+  (UUID généré serveur, retourné à l'appelant) → idempotent si la campagne
+  est rejouée. `apns.category = VELOX_PROMO` pour cette audience.
+- Nouvelle fonction planifiée `purgeOldClientNotifications` (24h, rétention
+  90 jours, requête de groupe de collection + suppression par lots de 450).
+- Règles Firestore : bloc `users/{userId}/notifications` (lecture
+  propriétaire, update limité à `read`/`readAt` via `onlyFields`,
+  create/delete interdits) ajouté dans **les deux** fichiers pertinents —
+  `functions/scripts/sim/firestore_rules_prod.rules` (celui réellement
+  déployé, référencé par `firebase.json` — **pas** la copie
+  `FINAL 253 NOMADE\...`, contrairement à ce qu'indiquait la mémoire
+  précédente) et la copie `FINAL 253 NOMADE\...` par cohérence.
+- `firestore.indexes.json` : `fieldOverrides` sur `notifications`/`createdAt`
+  (COLLECTION + COLLECTION_GROUP, ASC/DESC).
+- **Déployé** : `firebase deploy --only functions,firestore:rules,firestore:indexes
+  --project nomade253-478a9` — succès (~40 functions, dont
+  `purgeOldClientNotifications` créée).
+
+⚠️ Découverte en cours de session : le repo `nomade_client` avait déjà des
+changements non commités et sans rapport avec cette tâche (rebranding
+"Nomade253" → "Velox Corp" dans `index.js`/`firestore.rules`, probablement
+une autre session) — non touchés, juste posé le travail par-dessus. Rien n'a
+été committé dans ce repo (pas de dépôt git piloté par cette session admin).
+
+**Livrables écrits cette session** :
+- `C:\Users\PC\Downloads\RETOUR_NOTIFICATIONS_BACKEND.md` — retour à l'agent
+  iOS (schéma exact, index déployés, confirmation règles, un exemple de doc
+  par `type`, nom de la callable de campagne). Déposé dans Downloads (pas
+  dans `Velox_Client-IOS` sur StudioProjects : dates de fichiers figées au
+  15/07, aucune preuve que ce soit le repo réellement actif).
+- `Velox_client\PROMPT_NOTIFICATIONS_PAGE_ANDROID.md` — prompt pour l'écran
+  équivalent côté Android Kotlin, ancré dans le code réel (exploration du
+  repo faite avant écriture) : package `dj.velox.client`, pattern MVVM/Compose
+  de `OrderService`/`OrdersViewModel`/`OrderHistoryScreen` à reproduire,
+  point d'entrée `ProfileScreen.kt` (~ligne 356), routes dans
+  `VeloxNavGraph.kt`. Précise que ce nouvel écran est indépendant du
+  mécanisme `DeepLink`/`NotificationRouter` existant (tap sur push système).
+  **Pas encore fait.**
+
+## Fix — Annulation admin ne libère pas le livreur (26/08/2026)
+
+Origine : `PROMPT_FIX_CANCEL_LIBERE_LIVREUR.md` (racine du repo admin,
+committé). Bug : `orders_screen.dart`, `_confirmCancel` (~ligne 547) ne
+faisait qu'un `update` sur `orders/{orderId}.status`, sans jamais libérer
+`livreurs/{deliveryDriverId}` (`isAvailable`/`currentOrderId`) — un livreur
+avec une commande en cours annulée par l'admin restait bloqué à vie
+(`canAcceptOrders` figé à `false` côté app Kotlin, sans erreur visible).
+
+**Fait** : `_confirmCancel` passe désormais par une `Transaction` Firestore —
+lecture de `deliveryDriverId`, puis écriture atomique de l'annulation et,
+si un livreur est assigné (et que son doc existe encore), remise à
+`isAvailable: true`/`currentOrderId: null`. `flutter analyze` clean.
+
+Vérifié aussi `taxi_rides_screen.dart` par analogie (demandé par le prompt) :
+**pas de correctif nécessaire**. Contrairement aux livreurs, la disponibilité
+d'un chauffeur VTC (`drivers.isAvailable`) n'est jamais liée à un pointeur de
+course stocké — elle est recalculée à la volée via `driverHasActiveRide()`
+(requête live sur `taxiRides.status`). Annuler la course suffit déjà à le
+libérer automatiquement.
+
+Le prompt mentionnait aussi un filet de sécurité serveur déjà ajouté et
+déployé par un autre agent : `exports.onOrderCancelledReleaseDriver`
+(`nomade_client/functions/index.js`) — **vérifié présent**, non ajouté par
+cette session.
+
+**Committé et poussé** : commit `50d7d26` sur `feat/grille-tarifaire`
+(`lib/screens/orders/orders_screen.dart` + `PROMPT_FIX_CANCEL_LIBERE_LIVREUR.md`),
+`git push` fait.
+
 ## 🔜 Reste ouvert
 
 1. ~~Déployer `functions/index.js`~~ — fait (20/08 par l'utilisateur, 22/08 relivré
-   avec anti-abus + total remisé, par l'utilisateur).
+   avec anti-abus + total remisé, par l'utilisateur ; 26/08 relivré avec
+   l'historique de notifications, par Claude).
 2. ~~Copier/déployer les règles Firestore + Storage~~ — **fait par Claude via CLI
    le 22/08/2026** (`firebase deploy --only firestore:rules,storage`), plus besoin
    de copier-coller manuellement en console pour ce qui a été fait jusqu'ici.
-3. **App cliente `Velox_client`** : à faire par l'autre agent Claude Code — 2 prompts
-   en attente : `PROMPT_PROMO_CODE_CLIENT.md` (l'utilisateur teste actuellement en
-   local) et `PROMPT_BANNERS_ADMIN.md` (pas encore commencé).
-4. Test de bout en bout une fois le client fait, pour les deux features : codes
-   promo (usageCount/totalDiscountGiven/anti-abus/rejet 2e utilisation) et
-   bannières (création admin → apparition temps réel dans l'app, les 2 types, les
-   4 actions).
+3. **App cliente `Velox_client`** : à faire par l'autre agent Claude Code — 3
+   prompts en attente : `PROMPT_PROMO_CODE_CLIENT.md` (l'utilisateur teste
+   actuellement en local), `PROMPT_BANNERS_ADMIN.md` (pas encore commencé),
+   `PROMPT_NOTIFICATIONS_PAGE_ANDROID.md` (nouveau, pas encore commencé).
+4. Test de bout en bout une fois le client fait, pour les features livrées côté
+   backend/admin mais pas encore côté client : codes promo
+   (usageCount/totalDiscountGiven/anti-abus/rejet 2e utilisation), bannières
+   (création admin → apparition temps réel dans l'app, les 2 types, les 4
+   actions), et historique de notifications (badge non-lu, routage au tap).
 5. ~~Écran admin Tarifs VTC~~ — **fait et déployé le 23/08/2026.** Reste à vérifier
    en prod : créer/modifier le tarif depuis l'admin puis confirmer côté client que
    le prix affiché/facturé suit bien la nouvelle config (aucune app cliente
    retouchée cette session, la lecture était déjà en place).
+6. **Retour iOS** (`RETOUR_NOTIFICATIONS_BACKEND.md` dans Downloads) — à
+   vérifier que l'agent/équipe iOS l'a bien reçu et traité (confirmer que le
+   fichier a été récupéré, pas de mécanisme de notification automatique côté
+   admin).
