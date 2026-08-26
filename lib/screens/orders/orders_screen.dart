@@ -566,9 +566,34 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
     if (confirm == true) {
       try {
-        await _firestore.collection('orders').doc(orderId).update({
-          'status': 'cancelled',
-          'updatedAt': FieldValue.serverTimestamp(),
+        // Transaction : si un livreur est assigné (deliveryDriverId), le
+        // libérer dans la même écriture que l'annulation, sinon il reste
+        // bloqué à vie (currentOrderId rempli → canAcceptOrders faux côté
+        // app Kotlin, sans aucun message d'erreur pour lui).
+        final orderRef = _firestore.collection('orders').doc(orderId);
+        await _firestore.runTransaction((tx) async {
+          final orderSnap = await tx.get(orderRef);
+          final driverId = orderSnap.data()?['deliveryDriverId'] as String?;
+
+          var driverRef = driverId != null && driverId.isNotEmpty
+              ? _firestore.collection('livreurs').doc(driverId)
+              : null;
+          if (driverRef != null && !(await tx.get(driverRef)).exists) {
+            driverRef = null;
+          }
+
+          tx.update(orderRef, {
+            'status': 'cancelled',
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+
+          if (driverRef != null) {
+            tx.update(driverRef, {
+              'isAvailable': true,
+              'currentOrderId': null,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+          }
         });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
