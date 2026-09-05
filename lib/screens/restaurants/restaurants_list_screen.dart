@@ -4,6 +4,7 @@ import '../../constants.dart';
 import '../../models/order_tracking.dart';
 import '../../models/restaurant.dart';
 import '../../services/restaurant_service.dart';
+import '../../widgets/restaurant_order_count.dart';
 import 'add_restaurant_screen.dart';
 import 'restaurant_details_screen.dart';
 import '../menu/menu_management_screen.dart';
@@ -327,6 +328,7 @@ class _RestaurantsListScreenState extends State<RestaurantsListScreen> {
       child: Scrollbar(
         controller: _horizontalController,
         thumbVisibility: true,
+        trackVisibility: true,
         child: SingleChildScrollView(
           controller: _horizontalController,
           scrollDirection: Axis.horizontal,
@@ -445,7 +447,8 @@ class _RestaurantsListScreenState extends State<RestaurantsListScreen> {
                           ],
                         ),
                       ),
-                      DataCell(Text(restaurant.totalOrders.toString())),
+                      DataCell(
+                          RestaurantOrderCount(restaurantId: restaurant.id)),
                       DataCell(
                         Row(
                           children: [

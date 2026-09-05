@@ -13,7 +13,14 @@ class LivreursListScreen extends StatefulWidget {
 
 class _LivreursListScreenState extends State<LivreursListScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final ScrollController _horizontalController = ScrollController();
   String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _horizontalController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -272,147 +279,155 @@ class _LivreursListScreenState extends State<LivreursListScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(defaultPadding),
       child: Card(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            columnSpacing: 24,
-            columns: const [
-              DataColumn(label: Text('Actions')),
-              DataColumn(label: Text('Statut')),
-              DataColumn(label: Text('Photo')),
-              DataColumn(label: Text('Nom')),
-              DataColumn(label: Text('Téléphone')),
-              DataColumn(label: Text('Plaque Moto')),
-              DataColumn(label: Text('Livraisons')),
-              DataColumn(label: Text('Note')),
-            ],
-            rows: livreurs.map((doc) {
-              final data = doc.data() as Map<String, dynamic>;
+        child: Scrollbar(
+          controller: _horizontalController,
+          thumbVisibility: true,
+          trackVisibility: true,
+          child: SingleChildScrollView(
+            controller: _horizontalController,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(bottom: 12),
+            child: DataTable(
+              columnSpacing: 24,
+              columns: const [
+                DataColumn(label: Text('Actions')),
+                DataColumn(label: Text('Statut')),
+                DataColumn(label: Text('Photo')),
+                DataColumn(label: Text('Nom')),
+                DataColumn(label: Text('Téléphone')),
+                DataColumn(label: Text('Plaque Moto')),
+                DataColumn(label: Text('Livraisons')),
+                DataColumn(label: Text('Note')),
+              ],
+              rows: livreurs.map((doc) {
+                final data = doc.data() as Map<String, dynamic>;
 
-              final isOnline = data['isOnline'] ?? data['is_online'] ?? false;
-              final isAvailable =
-                  data['isAvailable'] ?? data['is_available'] ?? false;
-              final isActive = data['isActive'] ?? true;
-              final name = (data['name'] ?? '').toString();
+                final isOnline = data['isOnline'] ?? data['is_online'] ?? false;
+                final isAvailable =
+                    data['isAvailable'] ?? data['is_available'] ?? false;
+                final isActive = data['isActive'] ?? true;
+                final name = (data['name'] ?? '').toString();
 
-              return DataRow(cells: [
-                // Actions (en 1re colonne pour être toujours visibles)
-                DataCell(
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit,
-                            size: 20, color: primaryColor),
-                        onPressed: () => _navigateToEditLivreur(doc.id, data),
-                        tooltip: 'Modifier',
-                      ),
-                      IconButton(
-                        icon: Icon(isActive ? Icons.block : Icons.check_circle,
-                            size: 20,
-                            color: isActive ? errorColor : successColor),
-                        onPressed: () =>
-                            _confirmToggleActive(doc.id, name, isActive),
-                        tooltip: isActive ? 'Bloquer' : 'Débloquer',
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete,
-                            size: 20, color: errorColor),
-                        onPressed: () => _confirmDelete(doc.id, data['name']),
-                        tooltip: 'Supprimer',
-                      ),
-                    ],
-                  ),
-                ),
-                // Statut
-                DataCell(
-                  !isActive
-                      ? _statusBadge('Bloqué', errorColor)
-                      : Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: isOnline
-                                    ? (isAvailable
-                                        ? Colors.green
-                                        : Colors.orange)
-                                    : Colors.grey,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              isOnline
-                                  ? (isAvailable ? 'Dispo' : 'Occupé')
-                                  : 'Offline',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: isOnline
-                                    ? (isAvailable
-                                        ? Colors.green
-                                        : Colors.orange)
-                                    : Colors.grey,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
+                return DataRow(cells: [
+                  // Actions (en 1re colonne pour être toujours visibles)
+                  DataCell(
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit,
+                              size: 20, color: primaryColor),
+                          onPressed: () => _navigateToEditLivreur(doc.id, data),
+                          tooltip: 'Modifier',
                         ),
-                ),
-                // Photo
-                DataCell(
-                  CircleAvatar(
-                    radius: 16,
-                    backgroundColor: Colors.orange,
-                    child: ClipOval(
-                      child: data['photoUrl'] != null
-                          ? Image.network(
-                              data['photoUrl'],
-                              width: 32,
-                              height: 32,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.delivery_dining,
-                                size: 16,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.delivery_dining,
-                              size: 16, color: Colors.white),
+                        IconButton(
+                          icon: Icon(
+                              isActive ? Icons.block : Icons.check_circle,
+                              size: 20,
+                              color: isActive ? errorColor : successColor),
+                          onPressed: () =>
+                              _confirmToggleActive(doc.id, name, isActive),
+                          tooltip: isActive ? 'Bloquer' : 'Débloquer',
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete,
+                              size: 20, color: errorColor),
+                          onPressed: () => _confirmDelete(doc.id, data['name']),
+                          tooltip: 'Supprimer',
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                // Nom
-                DataCell(Text(data['name'] ?? 'N/A')),
-                // Téléphone
-                DataCell(Text(data['phone'] ?? 'N/A')),
-                // Plaque
-                DataCell(
-                  Row(
-                    children: [
-                      const Icon(Icons.motorcycle, size: 16),
-                      const SizedBox(width: 4),
-                      Text(data['licensePlate'] ?? 'N/A'),
-                    ],
+                  // Statut
+                  DataCell(
+                    !isActive
+                        ? _statusBadge('Bloqué', errorColor)
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: isOnline
+                                      ? (isAvailable
+                                          ? Colors.green
+                                          : Colors.orange)
+                                      : Colors.grey,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                isOnline
+                                    ? (isAvailable ? 'Dispo' : 'Occupé')
+                                    : 'Offline',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: isOnline
+                                      ? (isAvailable
+                                          ? Colors.green
+                                          : Colors.orange)
+                                      : Colors.grey,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
                   ),
-                ),
-                // Livraisons
-                DataCell(Text(
-                    '${data['totalDeliveries'] ?? data['total_deliveries'] ?? 0}')),
-                // Note
-                DataCell(
-                  Row(
-                    children: [
-                      const Icon(Icons.star, size: 16, color: warningColor),
-                      const SizedBox(width: 4),
-                      Text((data['rating'] ?? 5.0).toStringAsFixed(1)),
-                    ],
+                  // Photo
+                  DataCell(
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundColor: Colors.orange,
+                      child: ClipOval(
+                        child: data['photoUrl'] != null
+                            ? Image.network(
+                                data['photoUrl'],
+                                width: 32,
+                                height: 32,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const Icon(
+                                  Icons.delivery_dining,
+                                  size: 16,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.delivery_dining,
+                                size: 16, color: Colors.white),
+                      ),
+                    ),
                   ),
-                ),
-              ]);
-            }).toList(),
+                  // Nom
+                  DataCell(Text(data['name'] ?? 'N/A')),
+                  // Téléphone
+                  DataCell(Text(data['phone'] ?? 'N/A')),
+                  // Plaque
+                  DataCell(
+                    Row(
+                      children: [
+                        const Icon(Icons.motorcycle, size: 16),
+                        const SizedBox(width: 4),
+                        Text(data['licensePlate'] ?? 'N/A'),
+                      ],
+                    ),
+                  ),
+                  // Livraisons
+                  DataCell(Text(
+                      '${data['totalDeliveries'] ?? data['total_deliveries'] ?? 0}')),
+                  // Note
+                  DataCell(
+                    Row(
+                      children: [
+                        const Icon(Icons.star, size: 16, color: warningColor),
+                        const SizedBox(width: 4),
+                        Text((data['rating'] ?? 5.0).toStringAsFixed(1)),
+                      ],
+                    ),
+                  ),
+                ]);
+              }).toList(),
+            ),
           ),
         ),
       ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:intl/intl.dart';
 import '../../constants.dart';
 
@@ -170,12 +171,29 @@ class _UsersScreenState extends State<UsersScreen> {
               ],
             ),
             isThreeLine: true,
-            trailing: IconButton(
-              icon: Icon(isActive ? Icons.block : Icons.check_circle,
-                  color: isActive ? errorColor : successColor),
-              tooltip: isActive ? 'Bloquer' : 'Débloquer',
-              onPressed: () =>
-                  _confirmToggleActive(docs[i].id, name.toString(), isActive),
+            trailing: PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              onSelected: (action) => _handleUserAction(
+                  action, docs[i].id, name.toString(), isActive),
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'toggle',
+                  child: Row(children: [
+                    Icon(isActive ? Icons.block : Icons.check_circle,
+                        size: 18, color: isActive ? errorColor : successColor),
+                    const SizedBox(width: 8),
+                    Text(isActive ? 'Bloquer' : 'Débloquer'),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Row(children: [
+                    Icon(Icons.delete_forever, size: 18, color: errorColor),
+                    SizedBox(width: 8),
+                    Text('Supprimer le compte'),
+                  ]),
+                ),
+              ],
             ),
           ),
         );
@@ -206,6 +224,7 @@ class _UsersScreenState extends State<UsersScreen> {
         child: Scrollbar(
           controller: _horizontalController,
           thumbVisibility: true,
+          trackVisibility: true,
           child: SingleChildScrollView(
             controller: _horizontalController,
             scrollDirection: Axis.horizontal,
@@ -273,6 +292,13 @@ class _UsersScreenState extends State<UsersScreen> {
                           onPressed: () => _confirmToggleActive(
                               doc.id, name.toString(), isActive),
                         ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_forever,
+                              size: 20, color: errorColor),
+                          tooltip: 'Supprimer le compte',
+                          onPressed: () =>
+                              _confirmDeleteAccount(doc.id, name.toString()),
+                        ),
                       ],
                     ),
                   ),
@@ -318,6 +344,14 @@ class _UsersScreenState extends State<UsersScreen> {
         ),
         actions: [
           TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _confirmDeleteAccount(id, name.toString());
+            },
+            style: TextButton.styleFrom(foregroundColor: errorColor),
+            child: const Text('Supprimer'),
+          ),
+          TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Fermer'),
           ),
@@ -335,17 +369,131 @@ class _UsersScreenState extends State<UsersScreen> {
     );
   }
 
-  // Bloquer/débloquer un client
+  void _handleUserAction(
+      String action, String userId, String userName, bool isActive) {
+    switch (action) {
+      case 'toggle':
+        _confirmToggleActive(userId, userName, isActive);
+        break;
+      case 'delete':
+        _confirmDeleteAccount(userId, userName);
+        break;
+    }
+  }
+
+  // Bloquer/débloquer un client — passe par la Cloud Function adminSetUserBlocked
+  // (désactive aussi le compte Firebase Auth, pas juste le flag Firestore).
   Future<void> _confirmToggleActive(
       String userId, String userName, bool currentlyActive) async {
+    final willBlock = currentlyActive;
+    String? reason;
+
+    if (willBlock) {
+      final reasonController = TextEditingController();
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Bloquer le client'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Voulez-vous vraiment bloquer $userName ?\n'
+                  'Le compte sera désactivé : connexion impossible et création '
+                  'de commandes/courses bloquée (ex. fausses commandes, abus).'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: reasonController,
+                decoration: const InputDecoration(
+                  labelText: 'Motif (optionnel)',
+                  hintText: 'Ex. fausses commandes répétées',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annuler'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: TextButton.styleFrom(foregroundColor: errorColor),
+              child: const Text('Bloquer'),
+            ),
+          ],
+        ),
+      );
+      reasonController.dispose();
+      if (confirm != true) return;
+      reason = reasonController.text.trim();
+    } else {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Débloquer le client'),
+          content: Text('Voulez-vous vraiment débloquer $userName ?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annuler'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: TextButton.styleFrom(foregroundColor: successColor),
+              child: const Text('Débloquer'),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+    }
+
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('adminSetUserBlocked')
+          .call({
+        'userId': userId,
+        'blocked': willBlock,
+        if (reason != null && reason.isNotEmpty) 'reason': reason,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(willBlock ? 'Client bloqué' : 'Client débloqué'),
+            backgroundColor: successColor,
+          ),
+        );
+      }
+    } on FirebaseFunctionsException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Erreur: ${e.message}'),
+              backgroundColor: errorColor),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: errorColor),
+        );
+      }
+    }
+  }
+
+  // Suppression définitive du compte — Cloud Function adminDeleteUserAccount
+  // (doc Firestore + sous-collections + compte Firebase Auth). Irréversible.
+  Future<void> _confirmDeleteAccount(String userId, String userName) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title:
-            Text(currentlyActive ? 'Bloquer le client' : 'Débloquer le client'),
-        content: Text(currentlyActive
-            ? 'Voulez-vous vraiment bloquer $userName ?'
-            : 'Voulez-vous vraiment débloquer $userName ?'),
+        title: const Text('Supprimer le compte'),
+        content: Text(
+            'Voulez-vous vraiment supprimer définitivement le compte de '
+            '$userName ?\n\nCette action est IRRÉVERSIBLE : profil, adresses, '
+            'favoris et compte de connexion seront supprimés. L\'historique '
+            'des commandes n\'est pas affecté.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -353,35 +501,40 @@ class _UsersScreenState extends State<UsersScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(
-                foregroundColor: currentlyActive ? errorColor : successColor),
-            child: Text(currentlyActive ? 'Bloquer' : 'Débloquer'),
+            style: TextButton.styleFrom(foregroundColor: errorColor),
+            child: const Text('Supprimer définitivement'),
           ),
         ],
       ),
     );
 
-    if (confirm == true) {
-      try {
-        await _firestore.collection('users').doc(userId).update({
-          'isActive': !currentlyActive,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content:
-                  Text(currentlyActive ? 'Client bloqué' : 'Client débloqué'),
-              backgroundColor: successColor,
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Erreur: $e'), backgroundColor: errorColor),
-          );
-        }
+    if (confirm != true) return;
+
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('adminDeleteUserAccount')
+          .call({'userId': userId});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Compte de $userName supprimé'),
+            backgroundColor: successColor,
+          ),
+        );
+      }
+    } on FirebaseFunctionsException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Erreur: ${e.message}'),
+              backgroundColor: errorColor),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: errorColor),
+        );
       }
     }
   }

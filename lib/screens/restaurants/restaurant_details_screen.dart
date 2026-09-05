@@ -8,6 +8,7 @@ import '../../models/opening_hours.dart';
 import '../../services/restaurant_service.dart';
 import '../../services/app_logger.dart';
 import '../../widgets/opening_hours_editor.dart';
+import '../../widgets/restaurant_order_count.dart';
 import '../menu/menu_management_screen.dart';
 import 'edit_restaurant_screen.dart';
 
@@ -186,7 +187,11 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
           child: _buildStatCard(
             icon: Icons.shopping_bag,
             label: 'Commandes',
-            value: _restaurant.totalOrders.toString(),
+            value: '',
+            valueWidget: RestaurantOrderCount(
+              restaurantId: _restaurant.id,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
             color: Colors.blue,
           ),
         ),
@@ -218,6 +223,7 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
     required String label,
     required String value,
     required Color color,
+    Widget? valueWidget,
   }) {
     return Card(
       child: Padding(
@@ -226,13 +232,14 @@ class _RestaurantDetailsScreenState extends State<RestaurantDetailsScreen> {
           children: [
             Icon(icon, size: 32, color: color),
             const SizedBox(height: 8),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            valueWidget ??
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
             const SizedBox(height: 4),
             Text(
               label,

@@ -13,7 +13,14 @@ class DriversListScreen extends StatefulWidget {
 
 class _DriversListScreenState extends State<DriversListScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final ScrollController _horizontalController = ScrollController();
   String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _horizontalController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -194,86 +201,94 @@ class _DriversListScreenState extends State<DriversListScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(defaultPadding),
       child: Card(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            columnSpacing: 24,
-            columns: const [
-              DataColumn(label: Text('Actions')),
-              DataColumn(label: Text('Statut')),
-              DataColumn(label: Text('Nom')),
-              DataColumn(label: Text('Téléphone')),
-              DataColumn(label: Text('Email')),
-              DataColumn(label: Text('Véhicule')),
-              DataColumn(label: Text('Courses')),
-              DataColumn(label: Text('Note')),
-            ],
-            rows: drivers.map((doc) {
-              final data = doc.data() as Map<String, dynamic>;
+        child: Scrollbar(
+          controller: _horizontalController,
+          thumbVisibility: true,
+          trackVisibility: true,
+          child: SingleChildScrollView(
+            controller: _horizontalController,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(bottom: 12),
+            child: DataTable(
+              columnSpacing: 24,
+              columns: const [
+                DataColumn(label: Text('Actions')),
+                DataColumn(label: Text('Statut')),
+                DataColumn(label: Text('Nom')),
+                DataColumn(label: Text('Téléphone')),
+                DataColumn(label: Text('Email')),
+                DataColumn(label: Text('Véhicule')),
+                DataColumn(label: Text('Courses')),
+                DataColumn(label: Text('Note')),
+              ],
+              rows: drivers.map((doc) {
+                final data = doc.data() as Map<String, dynamic>;
 
-              // ✅ VERSION CORRIGÉE - lecture uniquement camelCase
-              final isOnline = data['isOnline'] ?? false;
-              final isActive = data['isActive'] ?? true;
-              final name = (data['name'] ?? '').toString();
+                // ✅ VERSION CORRIGÉE - lecture uniquement camelCase
+                final isOnline = data['isOnline'] ?? false;
+                final isActive = data['isActive'] ?? true;
+                final name = (data['name'] ?? '').toString();
 
-              return DataRow(cells: [
-                // Actions (en 1re colonne pour être toujours visibles)
-                DataCell(
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit,
-                            size: 20, color: primaryColor),
-                        onPressed: () => _navigateToEditDriver(doc.id, data),
-                        tooltip: 'Modifier',
-                      ),
-                      IconButton(
-                        icon: Icon(isActive ? Icons.block : Icons.check_circle,
-                            size: 20,
-                            color: isActive ? errorColor : successColor),
-                        onPressed: () =>
-                            _confirmToggleActive(doc.id, name, isActive),
-                        tooltip: isActive ? 'Bloquer' : 'Débloquer',
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete,
-                            size: 20, color: errorColor),
-                        onPressed: () => _confirmDelete(doc.id, data['name']),
-                        tooltip: 'Supprimer',
-                      ),
-                    ],
-                  ),
-                ),
-                DataCell(
-                  !isActive
-                      ? _statusBadge('Bloqué', errorColor)
-                      : Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color:
-                                isOnline == true ? successColor : Colors.grey,
-                            shape: BoxShape.circle,
-                          ),
+                return DataRow(cells: [
+                  // Actions (en 1re colonne pour être toujours visibles)
+                  DataCell(
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit,
+                              size: 20, color: primaryColor),
+                          onPressed: () => _navigateToEditDriver(doc.id, data),
+                          tooltip: 'Modifier',
                         ),
-                ),
-                DataCell(Text(data['name'] ?? 'N/A')),
-                DataCell(Text(data['phone'] ?? 'N/A')),
-                DataCell(Text(data['email'] ?? 'N/A')),
-                DataCell(Text(data['vehicleType'] ?? 'N/A')), // ✅ camelCase
-                DataCell(Text('${data['totalRides'] ?? 0}')), // ✅ camelCase
-                DataCell(
-                  Row(
-                    children: [
-                      const Icon(Icons.star, size: 16, color: warningColor),
-                      const SizedBox(width: 4),
-                      Text((data['rating'] ?? 0.0).toStringAsFixed(1)),
-                    ],
+                        IconButton(
+                          icon: Icon(
+                              isActive ? Icons.block : Icons.check_circle,
+                              size: 20,
+                              color: isActive ? errorColor : successColor),
+                          onPressed: () =>
+                              _confirmToggleActive(doc.id, name, isActive),
+                          tooltip: isActive ? 'Bloquer' : 'Débloquer',
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete,
+                              size: 20, color: errorColor),
+                          onPressed: () => _confirmDelete(doc.id, data['name']),
+                          tooltip: 'Supprimer',
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ]);
-            }).toList(),
+                  DataCell(
+                    !isActive
+                        ? _statusBadge('Bloqué', errorColor)
+                        : Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color:
+                                  isOnline == true ? successColor : Colors.grey,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                  ),
+                  DataCell(Text(data['name'] ?? 'N/A')),
+                  DataCell(Text(data['phone'] ?? 'N/A')),
+                  DataCell(Text(data['email'] ?? 'N/A')),
+                  DataCell(Text(data['vehicleType'] ?? 'N/A')), // ✅ camelCase
+                  DataCell(Text('${data['totalRides'] ?? 0}')), // ✅ camelCase
+                  DataCell(
+                    Row(
+                      children: [
+                        const Icon(Icons.star, size: 16, color: warningColor),
+                        const SizedBox(width: 4),
+                        Text((data['rating'] ?? 0.0).toStringAsFixed(1)),
+                      ],
+                    ),
+                  ),
+                ]);
+              }).toList(),
+            ),
           ),
         ),
       ),

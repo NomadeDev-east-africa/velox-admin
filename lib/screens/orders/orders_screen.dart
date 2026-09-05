@@ -396,6 +396,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         child: Scrollbar(
           controller: _horizontalController,
           thumbVisibility: true,
+          trackVisibility: true,
           child: SingleChildScrollView(
             controller: _horizontalController,
             scrollDirection: Axis.horizontal,

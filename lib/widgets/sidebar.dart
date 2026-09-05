@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../constants.dart';
 
-class Sidebar extends StatelessWidget {
+class Sidebar extends StatefulWidget {
   final String currentPage;
   final Function(String) onPageChanged;
 
@@ -11,6 +11,19 @@ class Sidebar extends StatelessWidget {
     required this.currentPage,
     required this.onPageChanged,
   });
+
+  @override
+  State<Sidebar> createState() => _SidebarState();
+}
+
+class _SidebarState extends State<Sidebar> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +43,8 @@ class Sidebar extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: veloxBlack,
                     borderRadius: BorderRadius.circular(defaultRadius),
-                    border: Border.all(color: primaryColor.withValues(alpha: 0.4)),
+                    border:
+                        Border.all(color: primaryColor.withValues(alpha: 0.4)),
                     boxShadow: [
                       BoxShadow(
                         color: primaryColor.withValues(alpha: 0.25),
@@ -72,82 +86,90 @@ class Sidebar extends StatelessWidget {
 
           const SizedBox(height: 16),
 
-          // Menu items
+          // Menu items — scrollbar toujours visible : 14 entrées ne tiennent
+          // pas dans la hauteur d'un écran courant, sans indice visuel
+          // l'utilisateur ne devine pas qu'il faut défiler pour tout voir.
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              children: [
-                _buildMenuItem(
-                  icon: Icons.dashboard,
-                  title: 'Dashboard',
-                  page: 'home',
-                ),
-                _buildMenuItem(
-                  icon: Icons.map,
-                  title: 'Carte',
-                  page: 'map',
-                ),
-                _buildMenuItem(
-                  icon: Icons.people,
-                  title: 'Chauffeurs',
-                  page: 'drivers',
-                ),
-                _buildMenuItem(
-                  icon: Icons.restaurant,
-                  title: 'Restaurants',
-                  page: 'restaurants',
-                ),
-                _buildMenuItem(
-                  icon: Icons.category,
-                  title: 'Catégories',
-                  page: 'categories',
-                ),
-                _buildMenuItem(
-                  icon: Icons.delivery_dining,
-                  title: 'Livreurs',
-                  page: 'livreurs',
-                ),
-                _buildMenuItem(
-                  icon: Icons.local_taxi,
-                  title: 'Courses Taxi',
-                  page: 'rides',
-                ),
-                _buildMenuItem(
-                  icon: Icons.receipt_long,
-                  title: 'Commandes',
-                  page: 'orders',
-                ),
-                _buildMenuItem(
-                  icon: Icons.people_outline,
-                  title: 'Utilisateurs',
-                  page: 'users',
-                ),
-                _buildMenuItem(
-                  icon: Icons.analytics,
-                  title: 'Statistiques',
-                  page: 'stats',
-                ),
-                _buildMenuItem(
-                  icon: Icons.campaign,
-                  title: 'Notifications',
-                  page: 'notifications',
-                ),
-                _buildMenuItem(
-                  icon: Icons.sell_outlined,
-                  title: 'Codes promo',
-                  page: 'promoCodes',
-                ),
-                _buildMenuItem(
-                  icon: Icons.view_carousel_outlined,
-                  title: 'Bannières',
-                  page: 'banners',
-                ),
-                _buildMenuItem(
-                  icon: Icons.local_taxi_outlined,
-                  title: 'Tarifs VTC',
-                  page: 'taxiPricing',
-                ),
-              ],
+            child: Scrollbar(
+              controller: _scrollController,
+              thumbVisibility: true,
+              trackVisibility: true,
+              child: ListView(
+                controller: _scrollController,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                children: [
+                  _buildMenuItem(
+                    icon: Icons.dashboard,
+                    title: 'Dashboard',
+                    page: 'home',
+                  ),
+                  _buildMenuItem(
+                    icon: Icons.map,
+                    title: 'Carte',
+                    page: 'map',
+                  ),
+                  _buildMenuItem(
+                    icon: Icons.people,
+                    title: 'Chauffeurs',
+                    page: 'drivers',
+                  ),
+                  _buildMenuItem(
+                    icon: Icons.restaurant,
+                    title: 'Restaurants',
+                    page: 'restaurants',
+                  ),
+                  _buildMenuItem(
+                    icon: Icons.category,
+                    title: 'Catégories',
+                    page: 'categories',
+                  ),
+                  _buildMenuItem(
+                    icon: Icons.delivery_dining,
+                    title: 'Livreurs',
+                    page: 'livreurs',
+                  ),
+                  _buildMenuItem(
+                    icon: Icons.local_taxi,
+                    title: 'Courses Taxi',
+                    page: 'rides',
+                  ),
+                  _buildMenuItem(
+                    icon: Icons.receipt_long,
+                    title: 'Commandes',
+                    page: 'orders',
+                  ),
+                  _buildMenuItem(
+                    icon: Icons.people_outline,
+                    title: 'Utilisateurs',
+                    page: 'users',
+                  ),
+                  _buildMenuItem(
+                    icon: Icons.analytics,
+                    title: 'Statistiques',
+                    page: 'stats',
+                  ),
+                  _buildMenuItem(
+                    icon: Icons.campaign,
+                    title: 'Notifications',
+                    page: 'notifications',
+                  ),
+                  _buildMenuItem(
+                    icon: Icons.sell_outlined,
+                    title: 'Codes promo',
+                    page: 'promoCodes',
+                  ),
+                  _buildMenuItem(
+                    icon: Icons.view_carousel_outlined,
+                    title: 'Bannières',
+                    page: 'banners',
+                  ),
+                  _buildMenuItem(
+                    icon: Icons.local_taxi_outlined,
+                    title: 'Tarifs VTC',
+                    page: 'taxiPricing',
+                  ),
+                ],
+              ),
             ),
           ),
 
@@ -165,7 +187,8 @@ class Sidebar extends StatelessWidget {
                 context: context,
                 builder: (context) => AlertDialog(
                   title: const Text('Déconnexion'),
-                  content: const Text('Voulez-vous vraiment vous déconnecter ?'),
+                  content:
+                      const Text('Voulez-vous vraiment vous déconnecter ?'),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(context, false),
@@ -197,7 +220,7 @@ class Sidebar extends StatelessWidget {
     required String title,
     required String page,
   }) {
-    final isSelected = currentPage == page;
+    final isSelected = widget.currentPage == page;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
@@ -236,7 +259,7 @@ class Sidebar extends StatelessWidget {
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
               ),
             ),
-            onTap: () => onPageChanged(page),
+            onTap: () => widget.onPageChanged(page),
           ),
         ],
       ),

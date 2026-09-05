@@ -12,7 +12,14 @@ class TaxiRidesScreen extends StatefulWidget {
 
 class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final ScrollController _horizontalController = ScrollController();
   String _filterStatus = 'tous';
+
+  @override
+  void dispose() {
+    _horizontalController.dispose();
+    super.dispose();
+  }
 
   DateTime? _parseDate(dynamic value) {
     if (value == null) return null;
@@ -254,81 +261,88 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(defaultPadding),
       child: Card(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            columnSpacing: 24,
-            columns: const [
-              // Actions en 1re colonne pour être toujours visibles sans avoir
-              // à scroller horizontalement (même pattern que livreurs/restaurants).
-              DataColumn(label: Text('Actions')),
-              DataColumn(label: Text('Statut')),
-              DataColumn(label: Text('Date')),
-              DataColumn(label: Text('Passager')),
-              DataColumn(label: Text('Téléphone')),
-              DataColumn(label: Text('Type véhicule')),
-              DataColumn(label: Text('Tarif estimé')),
-              DataColumn(label: Text('Tarif final')),
-              DataColumn(label: Text('Chauffeur')),
-            ],
-            rows: docs.map((doc) {
-              final data = doc.data() as Map<String, dynamic>;
-              final status = data['status'] ?? 'requested';
-              final requestedAt = data['requestedAt'] != null
-                  ? _formatDate(data['requestedAt'], pattern: 'dd/MM HH:mm')
-                  : 'N/A';
+        child: Scrollbar(
+          controller: _horizontalController,
+          thumbVisibility: true,
+          trackVisibility: true,
+          child: SingleChildScrollView(
+            controller: _horizontalController,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(bottom: 12),
+            child: DataTable(
+              columnSpacing: 24,
+              columns: const [
+                // Actions en 1re colonne pour être toujours visibles sans avoir
+                // à scroller horizontalement (même pattern que livreurs/restaurants).
+                DataColumn(label: Text('Actions')),
+                DataColumn(label: Text('Statut')),
+                DataColumn(label: Text('Date')),
+                DataColumn(label: Text('Passager')),
+                DataColumn(label: Text('Téléphone')),
+                DataColumn(label: Text('Type véhicule')),
+                DataColumn(label: Text('Tarif estimé')),
+                DataColumn(label: Text('Tarif final')),
+                DataColumn(label: Text('Chauffeur')),
+              ],
+              rows: docs.map((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                final status = data['status'] ?? 'requested';
+                final requestedAt = data['requestedAt'] != null
+                    ? _formatDate(data['requestedAt'], pattern: 'dd/MM HH:mm')
+                    : 'N/A';
 
-              return DataRow(cells: [
-                DataCell(
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.visibility, size: 20),
-                        onPressed: () => _showRideDetails(doc.id, data),
-                        tooltip: 'Voir détails',
-                      ),
-                      _cancelButton(doc.id, status),
-                    ],
-                  ),
-                ),
-                DataCell(
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: _statusColor(status),
-                          shape: BoxShape.circle,
+                return DataRow(cells: [
+                  DataCell(
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.visibility, size: 20),
+                          onPressed: () => _showRideDetails(doc.id, data),
+                          tooltip: 'Voir détails',
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _statusLabels[status] ?? status,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: _statusColor(status),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
+                        _cancelButton(doc.id, status),
+                      ],
+                    ),
                   ),
-                ),
-                DataCell(Text(requestedAt)),
-                DataCell(Text(data['userName'] ?? 'N/A')),
-                DataCell(Text(data['userPhone'] ?? 'N/A')),
-                DataCell(Text(data['vehicleType'] ?? 'N/A')),
-                DataCell(Text(data['estimatedFare'] != null
-                    ? '${(data['estimatedFare'] as num).toStringAsFixed(0)} FDJ'
-                    : 'N/A')),
-                DataCell(Text(data['finalFare'] != null
-                    ? '${data['finalFare']} FDJ'
-                    : '-')),
-                DataCell(Text(data['driverName'] ?? '-')),
-              ]);
-            }).toList(),
+                  DataCell(
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: _statusColor(status),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _statusLabels[status] ?? status,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: _statusColor(status),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DataCell(Text(requestedAt)),
+                  DataCell(Text(data['userName'] ?? 'N/A')),
+                  DataCell(Text(data['userPhone'] ?? 'N/A')),
+                  DataCell(Text(data['vehicleType'] ?? 'N/A')),
+                  DataCell(Text(data['estimatedFare'] != null
+                      ? '${(data['estimatedFare'] as num).toStringAsFixed(0)} FDJ'
+                      : 'N/A')),
+                  DataCell(Text(data['finalFare'] != null
+                      ? '${data['finalFare']} FDJ'
+                      : '-')),
+                  DataCell(Text(data['driverName'] ?? '-')),
+                ]);
+              }).toList(),
+            ),
           ),
         ),
       ),
