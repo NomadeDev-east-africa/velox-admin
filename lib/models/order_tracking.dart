@@ -18,6 +18,61 @@ enum OrderPhase {
 
 enum DelayLevel { onTime, late, critical }
 
+/// Un article du panier client, tel qu'écrit dans `orders.items[]` (miroir de
+/// `OrderItem` côté app resto/client Kotlin). Lecture tolérante : `sauces` et
+/// `extras` peuvent être une liste de chaînes ou une liste d'objets
+/// `{name, price, isSelected}` selon la version de l'app cliente qui a créé
+/// la commande — seul le nom nous intéresse ici.
+class OrderLineItem {
+  final String name;
+  final int quantity;
+  final num unitPrice;
+  final num totalPrice;
+  final List<String> sauces;
+  final List<String> extras;
+
+  const OrderLineItem({
+    required this.name,
+    required this.quantity,
+    required this.unitPrice,
+    required this.totalPrice,
+    required this.sauces,
+    required this.extras,
+  });
+
+  factory OrderLineItem.fromMap(Map<String, dynamic> map) {
+    List<String> extractNames(dynamic raw) {
+      if (raw is! List) return const [];
+      return raw
+          .map((e) {
+            if (e is String) return e;
+            if (e is Map) return (e['name'] ?? '').toString();
+            return '';
+          })
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+
+    num? asNum(dynamic v) => v is num ? v : null;
+
+    final quantity = asNum(map['quantity'])?.toInt() ?? 1;
+    final unitPrice = asNum(map['unitPrice']) ??
+        asNum(map['basePrice']) ??
+        asNum(map['price']) ??
+        0;
+    final totalPrice = asNum(map['totalPrice']) ?? (unitPrice * quantity);
+
+    return OrderLineItem(
+      name: (map['name'] ?? '').toString(),
+      quantity: quantity,
+      unitPrice: unitPrice,
+      totalPrice: totalPrice,
+      sauces: extractNames(map['sauces']),
+      extras: extractNames(map['extras']),
+    );
+  }
+}
+
 /// Libellé FR d'une étape, indépendant d'une commande précise (utilisé pour
 /// les filtres de l'écran de suivi).
 String orderPhaseLabel(OrderPhase phase) {
@@ -50,6 +105,7 @@ class OrderTracking {
   final String deliveryAddress;
   final num total;
   final String status;
+  final List<OrderLineItem> items;
   final DateTime? createdAt;
   final DateTime? acceptedAt;
   final DateTime? readyAt;
@@ -82,6 +138,7 @@ class OrderTracking {
     required this.deliveryAddress,
     required this.total,
     required this.status,
+    required this.items,
     required this.createdAt,
     required this.acceptedAt,
     required this.readyAt,
@@ -103,6 +160,11 @@ class OrderTracking {
       deliveryAddress: (data['deliveryAddress'] ?? '').toString(),
       total: (data['total'] is num) ? data['total'] as num : 0,
       status: (data['status'] ?? '').toString(),
+      items: (data['items'] as List?)
+              ?.whereType<Map>()
+              .map((e) => OrderLineItem.fromMap(Map<String, dynamic>.from(e)))
+              .toList() ??
+          const [],
       createdAt: Formatters.parseFirestoreDate(data['createdAt']),
       acceptedAt: Formatters.parseFirestoreDate(data['acceptedAt']),
       readyAt: Formatters.parseFirestoreDate(data['readyAt']),

@@ -42,6 +42,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   /// l'onglet est en arrière-plan (pas soumis à la politique d'autoplay).
   late final String _baseTitle;
   final ScrollController _horizontalController = ScrollController();
+  final ScrollController _verticalTableController = ScrollController();
 
   static const _filterablePhases = [
     OrderPhase.awaitingAcceptance,
@@ -66,6 +67,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   void dispose() {
     _ticker?.cancel();
     _horizontalController.dispose();
+    _verticalTableController.dispose();
     html.document.title = _baseTitle;
     super.dispose();
   }
@@ -389,67 +391,104 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
+  // Tableau à hauteur bornée (= zone visible sous les filtres) : le scroll
+  // horizontal ET le scroll vertical des lignes restent tous les deux
+  // ancrés dans cette zone, donc leurs barres de défilement sont toujours
+  // visibles et atteignables sans avoir à d'abord scroller la page entière
+  // jusqu'en bas pour "tomber" dessus.
   Widget _buildDesktopTable(List<OrderTracking> items) {
-    return SingleChildScrollView(
+    return Padding(
       padding: const EdgeInsets.all(defaultPadding),
-      child: Card(
-        child: Scrollbar(
-          controller: _horizontalController,
-          thumbVisibility: true,
-          trackVisibility: true,
-          child: SingleChildScrollView(
-            controller: _horizontalController,
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.only(bottom: 12),
-            child: DataTable(
-              columnSpacing: 24,
-              horizontalMargin: 16,
-              headingRowHeight: 48,
-              dataRowMinHeight: 56,
-              dataRowMaxHeight: 72,
-              columns: const [
-                DataColumn(label: Text('Statut')),
-                DataColumn(label: Text('Restaurant')),
-                DataColumn(label: Text('Client')),
-                DataColumn(label: Text('Téléphone')),
-                DataColumn(label: Text('Livreur')),
-                DataColumn(label: Text('Créée le')),
-                DataColumn(label: Text('Actions')),
-              ],
-              rows: items.map((o) {
-                return DataRow(cells: [
-                  DataCell(_phaseBadge(o)),
-                  DataCell(Text(o.restaurantName)),
-                  DataCell(Text(o.customerName)),
-                  DataCell(
-                      Text(o.customerPhone.isEmpty ? '—' : o.customerPhone)),
-                  DataCell(Text(o.driverName.isEmpty ? '—' : o.driverName)),
-                  DataCell(
-                      Text(_formatDate(o.createdAt, pattern: 'dd/MM HH:mm'))),
-                  DataCell(
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.visibility, size: 20),
-                          onPressed: () => _showOrderDetails(o),
-                          tooltip: 'Voir détails',
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final tableHeight = constraints.maxHeight;
+          return SizedBox(
+            height: tableHeight,
+            child: Card(
+              clipBehavior: Clip.antiAlias,
+              child: Scrollbar(
+                controller: _horizontalController,
+                thumbVisibility: true,
+                trackVisibility: true,
+                child: SingleChildScrollView(
+                  controller: _horizontalController,
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    height: tableHeight,
+                    child: Scrollbar(
+                      controller: _verticalTableController,
+                      thumbVisibility: true,
+                      trackVisibility: true,
+                      notificationPredicate: (notif) => notif.depth == 1,
+                      child: SingleChildScrollView(
+                        controller: _verticalTableController,
+                        padding: const EdgeInsets.only(bottom: 12, right: 12),
+                        child: DataTable(
+                          columnSpacing: 24,
+                          horizontalMargin: 16,
+                          headingRowHeight: 48,
+                          dataRowMinHeight: 56,
+                          dataRowMaxHeight: 72,
+                          // Ordre pensé pour rester lisible sans scroll
+                          // horizontal sur un écran standard :
+                          // Statut/Actions/Date d'abord (l'essentiel au
+                          // premier coup d'œil — bouton "Voir détails" et
+                          // heure de la commande), Téléphone/Livreur en
+                          // dernier (consultables via le scroll horizontal,
+                          // moins souvent nécessaires immédiatement).
+                          columns: const [
+                            DataColumn(label: Text('Statut')),
+                            DataColumn(label: Text('Actions')),
+                            DataColumn(label: Text('Créée le')),
+                            DataColumn(label: Text('Restaurant')),
+                            DataColumn(label: Text('Client')),
+                            DataColumn(label: Text('Téléphone')),
+                            DataColumn(label: Text('Livreur')),
+                          ],
+                          rows: items.map((o) {
+                            return DataRow(cells: [
+                              DataCell(_phaseBadge(o)),
+                              DataCell(
+                                Row(
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.visibility,
+                                          size: 20),
+                                      onPressed: () => _showOrderDetails(o),
+                                      tooltip: 'Voir détails',
+                                    ),
+                                    if (o.customerPhone.isNotEmpty)
+                                      IconButton(
+                                        icon: const Icon(Icons.phone,
+                                            size: 20, color: primaryColor),
+                                        tooltip: 'Appeler le client',
+                                        onPressed: () =>
+                                            _call(o.customerPhone),
+                                      ),
+                                    _cancelButton(o),
+                                  ],
+                                ),
+                              ),
+                              DataCell(Text(_formatDate(o.createdAt,
+                                  pattern: 'dd/MM HH:mm'))),
+                              DataCell(Text(o.restaurantName)),
+                              DataCell(Text(o.customerName)),
+                              DataCell(Text(o.customerPhone.isEmpty
+                                  ? '—'
+                                  : o.customerPhone)),
+                              DataCell(Text(
+                                  o.driverName.isEmpty ? '—' : o.driverName)),
+                            ]);
+                          }).toList(),
                         ),
-                        if (o.customerPhone.isNotEmpty)
-                          IconButton(
-                            icon: const Icon(Icons.phone,
-                                size: 20, color: primaryColor),
-                            tooltip: 'Appeler le client',
-                            onPressed: () => _call(o.customerPhone),
-                          ),
-                        _cancelButton(o),
-                      ],
+                      ),
                     ),
                   ),
-                ]);
-              }).toList(),
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -485,6 +524,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
               _detailRow('Total', '${o.total} FDJ'),
               if (o.driverName.isNotEmpty) _detailRow('Livreur', o.driverName),
               const Divider(height: 20),
+              _buildItemsSection(o.items),
+              const Divider(height: 20),
               _detailRow('Créée le', _formatDate(o.createdAt)),
               _detailRow('Acceptée à', _formatDate(o.acceptedAt)),
               _detailRow('Prête à', _formatDate(o.readyAt)),
@@ -503,6 +544,86 @@ class _OrdersScreenState extends State<OrdersScreen> {
             child: const Text('Fermer'),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Panier complet du client : chaque plat/produit avec sa quantité, son
+  /// prix et — surtout — les sauces et suppléments choisis (un milkshake ou
+  /// tout autre article ajouté au panier apparaît comme une ligne à part
+  /// entière). Sans ça, l'admin ne voyait qu'un total global, incapable de
+  /// vérifier ce que le client attend réellement.
+  Widget _buildItemsSection(List<OrderLineItem> items) {
+    if (items.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 4),
+        child: Text(
+          'Panier indisponible pour cette commande.',
+          style: TextStyle(color: textLightColor, fontStyle: FontStyle.italic),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 8),
+          child: Text(
+            'Panier du client',
+            style: TextStyle(fontWeight: FontWeight.w600, color: textLightColor),
+          ),
+        ),
+        ...items.map((item) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${item.quantity}x ${item.name}',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Text('${item.totalPrice.toInt()} FDJ',
+                          style: const TextStyle(color: textLightColor)),
+                    ],
+                  ),
+                  if (item.sauces.isNotEmpty || item.extras.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          if (item.sauces.isNotEmpty)
+                            _optionTag('Sauce', item.sauces.join(', '), infoColor),
+                          if (item.extras.isNotEmpty)
+                            _optionTag(
+                                'Supplément', item.extras.join(', '), warningColor),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            )),
+      ],
+    );
+  }
+
+  Widget _optionTag(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        '$label : $value',
+        style: TextStyle(fontSize: 12, color: color),
       ),
     );
   }
