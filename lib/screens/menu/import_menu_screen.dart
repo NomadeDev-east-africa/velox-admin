@@ -157,7 +157,9 @@ class _ImportMenuScreenState extends State<ImportMenuScreen> {
           final hasOwnSupplements = groups.any(
               (g) => g.name.toLowerCase().startsWith('suppl'));
           if (applySupplements && !hasOwnSupplements) {
-            groups.add(supplementsGroup);
+            // Groupe partagé par tous les plats : chaque plat reçoit ses
+            // propres identifiants de choix.
+            groups.add(supplementsGroup.withNewChoiceIds());
           }
           items.add(MenuItem(
             id: '',

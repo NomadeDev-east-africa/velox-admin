@@ -26,6 +26,16 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
   void initState() {
     super.initState();
     _drafts = widget.groups.map(_GroupDraft.fromGroup).toList();
+    // Plat ancien : des choix viennent de recevoir un identifiant. On le
+    // remonte tout de suite au parent, sinon une sauvegarde sans aucune
+    // modification des options l'enregistrerait encore sans `id`.
+    final hadMissingIds =
+        widget.groups.any((g) => g.choices.any((c) => c.id == null));
+    if (hadMissingIds) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _emit();
+      });
+    }
   }
 
   void _emit() {
@@ -276,7 +286,7 @@ class _OptionGroupsEditorState extends State<OptionGroupsEditor> {
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
                 onPressed: () {
-                  setState(() => draft.choices.add(_ChoiceDraft('', 0)));
+                  setState(() => draft.choices.add(_ChoiceDraft.create()));
                   _emit();
                 },
                 icon: const Icon(Icons.add, size: 16),
@@ -331,8 +341,7 @@ class _GroupDraft {
         maxChoices: g.maxChoices,
         // Un groupe dont tous les choix sont à 0 est considéré « gratuit ».
         free: g.choices.isNotEmpty && g.choices.every((c) => c.price == 0),
-        choices:
-            g.choices.map((c) => _ChoiceDraft(c.name, c.price)).toList(),
+        choices: g.choices.map(_ChoiceDraft.fromChoice).toList(),
       );
 
   OptionGroup toGroup() => OptionGroup(
@@ -343,13 +352,32 @@ class _GroupDraft {
         maxChoices: type == OptionType.multiple ? maxChoices : 0,
         choices: choices
             .where((c) => c.name.trim().isNotEmpty)
-            .map((c) => OptionChoice(name: c.name.trim(), price: c.price))
+            .map((c) => OptionChoice(
+                  id: c.id,
+                  name: c.name.trim(),
+                  price: c.price,
+                  available: c.available,
+                ))
             .toList(),
       );
 }
 
 class _ChoiceDraft {
+  /// Fixé une fois pour toutes : renommer ou changer le prix ne le touche pas.
+  final String id;
+  final bool available; // rupture posée par l'app resto, conservée telle quelle
   String name;
   int price;
-  _ChoiceDraft(this.name, this.price);
+
+  _ChoiceDraft._(this.id, this.name, this.price, this.available);
+
+  /// Nouveau choix (« Ajouter un choix ») : nouvel identifiant.
+  factory _ChoiceDraft.create() =>
+      _ChoiceDraft._(OptionChoice.newId(), '', 0, true);
+
+  /// Choix existant : garde son identifiant, ou en reçoit un s'il n'en avait
+  /// pas (plat ancien) — attribué ici, une seule fois, pour rester stable
+  /// entre deux émissions de l'éditeur.
+  factory _ChoiceDraft.fromChoice(OptionChoice c) => _ChoiceDraft._(
+      c.id ?? OptionChoice.newId(), c.name, c.price, c.available);
 }

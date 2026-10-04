@@ -36,6 +36,11 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
       appBar: AppBar(
         title: Text('Menu — ${widget.restaurantName}'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.fingerprint),
+            tooltip: "Générer les identifiants d'options (tous les restaurants)",
+            onPressed: _generateChoiceIds,
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: Center(
@@ -301,6 +306,43 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
     if (ok) await _service.deleteMenuItem(item.id);
   }
 
+  /// Migration : donne un identifiant stable (Loyverse) à chaque choix
+  /// d'option qui n'en a pas, sur les plats de **tous** les restaurants.
+  /// Compte d'abord, demande confirmation, puis écrit.
+  Future<void> _generateChoiceIds() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final missing = await _service.countMissingChoiceIds();
+      if (!mounted) return;
+      if (missing.items == 0) {
+        messenger.showSnackBar(const SnackBar(
+          content: Text("Tous les choix d'options ont déjà un identifiant"),
+          backgroundColor: successColor,
+        ));
+        return;
+      }
+      final ok = await _confirm(
+        "Générer les identifiants d'options ?\n\n"
+        '${missing.choices} choix sans identifiant, répartis sur '
+        '${missing.items} plat(s) (tous restaurants confondus).\n'
+        'Seules les options de ces plats seront réécrites ; '
+        'les ruptures et autres réglages sont conservés.',
+        confirmLabel: 'Générer',
+        destructive: false,
+      );
+      if (!ok) return;
+      final updated = await _service.generateMissingChoiceIds();
+      messenger.showSnackBar(SnackBar(
+        content: Text('Identifiants générés — $updated plat(s) mis à jour'),
+        backgroundColor: successColor,
+      ));
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Erreur: $e'), backgroundColor: errorColor),
+      );
+    }
+  }
+
   Future<void> _openImport() async {
     await Navigator.push(
       context,
@@ -365,7 +407,11 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
 
   // ==================== HELPERS ====================
 
-  Future<bool> _confirm(String message) async {
+  Future<bool> _confirm(
+    String message, {
+    String confirmLabel = 'Supprimer',
+    bool destructive = true,
+  }) async {
     final res = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -378,8 +424,9 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: errorColor),
-            child: const Text('Supprimer'),
+            style: TextButton.styleFrom(
+                foregroundColor: destructive ? errorColor : primaryColor),
+            child: Text(confirmLabel),
           ),
         ],
       ),

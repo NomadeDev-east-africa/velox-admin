@@ -49,8 +49,10 @@ class MenuJsonParser {
         if (s is Map) {
           final name = (s['nom'] ?? s['name'])?.toString();
           if (name != null && name.trim().isNotEmpty) {
-            globalSupplements.add(
-                OptionChoice(name: name.trim(), price: _toInt(s['prix'] ?? s['price'])));
+            globalSupplements.add(OptionChoice(
+                id: OptionChoice.newId(),
+                name: name.trim(),
+                price: _toInt(s['prix'] ?? s['price'])));
           }
         }
       }
@@ -122,8 +124,8 @@ class MenuJsonParser {
     final base = _toInt(raw['base'] ?? raw['prix_seul'] ?? raw['prix']);
 
     // Réutiliser le plat déjà créé (même nom) pour y empiler les tailles.
-    final existing =
-        cat.items.where((it) => it.name.toLowerCase() == itemName.toLowerCase());
+    final existing = cat.items
+        .where((it) => it.name.toLowerCase() == itemName.toLowerCase());
     if (existing.isNotEmpty) {
       if (size.isNotEmpty) existing.first.addSize(size, base);
       return;
@@ -133,12 +135,13 @@ class MenuJsonParser {
     final choices = <OptionChoice>[];
     final supp = raw['supplements'];
     if (supp is Map) {
-      supp.forEach((k, v) =>
-          choices.add(OptionChoice(name: k.toString(), price: _toInt(v))));
+      supp.forEach((k, v) => choices.add(OptionChoice(
+          id: OptionChoice.newId(), name: k.toString(), price: _toInt(v))));
     }
     final extra = _toInt(raw['extra']);
     if (extra > 0) {
-      choices.add(OptionChoice(name: 'Ingrédient extra', price: extra));
+      choices.add(OptionChoice(
+          id: OptionChoice.newId(), name: 'Ingrédient extra', price: extra));
     }
     final extraGroups = <OptionGroup>[
       if (choices.isNotEmpty)
