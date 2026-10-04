@@ -1,3 +1,5 @@
+import 'dart:math';
+
 /// Modèle générique d'options pour un plat (menuItem) ou une catégorie.
 ///
 /// Un [OptionGroup] regroupe des [OptionChoice]. Il couvre tous les cas du menu :
@@ -58,6 +60,12 @@ class OptionGroup {
     return groups.map((g) => g.toMap()).toList();
   }
 
+  /// Copie du groupe dont chaque choix reçoit un **nouvel** identifiant. Un
+  /// groupe copié dans un autre plat (modèle de catégorie, plat dupliqué,
+  /// suppléments globaux d'un import) passe toujours par ici.
+  OptionGroup withNewChoiceIds() =>
+      copyWith(choices: choices.map((c) => c.withNewId()).toList());
+
   OptionGroup copyWith({
     String? name,
     OptionType? type,
@@ -74,23 +82,70 @@ class OptionGroup {
 }
 
 class OptionChoice {
+  /// Identifiant stable du choix (`ch_` + 8 caractères `[a-z0-9]`), généré une
+  /// seule fois à la création et jamais modifié ensuite (renommage, prix…).
+  /// Recopié par les apps client dans `orders.items[].extras[].choiceId` :
+  /// c'est la clé de correspondance avec la caisse Loyverse.
+  /// `null` uniquement pour un plat ancien pas encore migré.
+  final String? id;
   final String name;
   final int price; // supplément en FDJ (0 = inclus)
 
-  const OptionChoice({required this.name, this.price = 0});
+  /// `false` = choix en rupture, posé par l'app restaurant. L'admin ne le
+  /// modifie pas mais doit le réécrire tel quel quand il sauvegarde un plat.
+  final bool available;
 
-  Map<String, dynamic> toMap() => {'name': name, 'price': price};
+  const OptionChoice({
+    this.id,
+    required this.name,
+    this.price = 0,
+    this.available = true,
+  });
+
+  static final _random = Random.secure();
+  static const _idChars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+
+  /// Nouvel identifiant de choix : `ch_` + 8 caractères `[a-z0-9]`.
+  static String newId() =>
+      'ch_${List.generate(8, (_) => _idChars[_random.nextInt(_idChars.length)]).join()}';
+
+  /// Format attendu d'un identifiant de choix.
+  static final idPattern = RegExp(r'^ch_[a-z0-9]{8}$');
+
+  Map<String, dynamic> toMap() => {
+        if (id != null) 'id': id,
+        'name': name,
+        'price': price,
+        if (!available) 'available': false,
+      };
 
   factory OptionChoice.fromMap(Map<String, dynamic> map) {
+    final id = map['id'] as String?;
     return OptionChoice(
+      id: (id == null || id.isEmpty) ? null : id,
       name: map['name'] ?? '',
       price: (map['price'] as num?)?.toInt() ?? 0,
+      available: map['available'] != false,
     );
   }
 
-  OptionChoice copyWith({String? name, int? price}) {
-    return OptionChoice(name: name ?? this.name, price: price ?? this.price);
+  OptionChoice copyWith({String? name, int? price, bool? available}) {
+    return OptionChoice(
+      id: id,
+      name: name ?? this.name,
+      price: price ?? this.price,
+      available: available ?? this.available,
+    );
   }
+
+  /// Même choix avec un **nouvel** identifiant : à utiliser quand un choix est
+  /// copié vers un autre plat (modèle de catégorie, duplication, import).
+  OptionChoice withNewId() => OptionChoice(
+        id: newId(),
+        name: name,
+        price: price,
+        available: available,
+      );
 }
 
 enum OptionType { single, multiple }

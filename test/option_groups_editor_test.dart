@@ -33,8 +33,11 @@ OptionGroup _supplements(List<String> names) => OptionGroup(
 
 void main() {
   group('OptionGroupsEditor — suppression d\'un choix', () {
-    testWidgets('supprimer le premier choix retire bien celui-là', (tester) async {
-      final read = await _pump(tester, [_supplements(['Emmental', 'Cheddar', 'Œuf'])]);
+    testWidgets('supprimer le premier choix retire bien celui-là',
+        (tester) async {
+      final read = await _pump(tester, [
+        _supplements(['Emmental', 'Cheddar', 'Œuf'])
+      ]);
       await tester.pumpAndSettle();
 
       // Les trois choix sont affichés.
@@ -56,7 +59,9 @@ void main() {
     });
 
     testWidgets('supprimer un choix du milieu', (tester) async {
-      final read = await _pump(tester, [_supplements(['Emmental', 'Cheddar', 'Œuf'])]);
+      final read = await _pump(tester, [
+        _supplements(['Emmental', 'Cheddar', 'Œuf'])
+      ]);
       await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.close).at(1)); // Cheddar
@@ -70,8 +75,11 @@ void main() {
       expect(emitted.single.choices.map((c) => c.name), ['Emmental', 'Œuf']);
     });
 
-    testWidgets('les prix suivent le bon choix après suppression', (tester) async {
-      final read = await _pump(tester, [_supplements(['Emmental', 'Cheddar', 'Œuf'])]);
+    testWidgets('les prix suivent le bon choix après suppression',
+        (tester) async {
+      final read = await _pump(tester, [
+        _supplements(['Emmental', 'Cheddar', 'Œuf'])
+      ]);
       await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.close).first); // Emmental (100)
@@ -85,8 +93,11 @@ void main() {
       expect(find.widgetWithText(TextFormField, '100'), findsNothing);
     });
 
-    testWidgets('éditer un champ après suppression vise le bon choix', (tester) async {
-      final read = await _pump(tester, [_supplements(['Emmental', 'Cheddar'])]);
+    testWidgets('éditer un champ après suppression vise le bon choix',
+        (tester) async {
+      final read = await _pump(tester, [
+        _supplements(['Emmental', 'Cheddar'])
+      ]);
       await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.close).first); // supprime Emmental
@@ -104,9 +115,11 @@ void main() {
   });
 
   group('OptionGroupsEditor — suppression d\'un groupe', () {
-    testWidgets('supprimer le premier groupe retire bien celui-là', (tester) async {
+    testWidgets('supprimer le premier groupe retire bien celui-là',
+        (tester) async {
       final read = await _pump(tester, [
-        OptionGroup(name: 'Formule', choices: const [OptionChoice(name: 'Seul')]),
+        OptionGroup(
+            name: 'Formule', choices: const [OptionChoice(name: 'Seul')]),
         OptionGroup(name: 'Taille', choices: const [OptionChoice(name: 'M')]),
       ]);
       await tester.pumpAndSettle();
@@ -119,6 +132,68 @@ void main() {
 
       final emitted = read();
       expect(emitted.map((g) => g.name), ['Taille']);
+    });
+  });
+  group('OptionGroupsEditor — identifiants de choix', () {
+    testWidgets('renommer un choix conserve son id et sa rupture',
+        (tester) async {
+      final read = await _pump(tester, [
+        const OptionGroup(name: 'Suppléments', choices: [
+          OptionChoice(
+              id: 'ch_k3f9x2ab', name: 'Cheddar', price: 100, available: false),
+        ]),
+      ]);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'Cheddar'), 'Gouda');
+      await tester.enterText(find.widgetWithText(TextFormField, '100'), '150');
+      await tester.pumpAndSettle();
+
+      final choice = read().single.choices.single;
+      expect(choice.name, 'Gouda');
+      expect(choice.price, 150);
+      expect(choice.id, 'ch_k3f9x2ab');
+      expect(choice.available, isFalse);
+    });
+
+    testWidgets('un nouveau choix reçoit un id au bon format', (tester) async {
+      final read = await _pump(tester, [
+        const OptionGroup(name: 'Suppléments', choices: [
+          OptionChoice(id: 'ch_k3f9x2ab', name: 'Cheddar', price: 100),
+        ]),
+      ]);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Ajouter un choix'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'Choix').last, 'Œuf');
+      await tester.pumpAndSettle();
+
+      final choices = read().single.choices;
+      expect(choices.map((c) => c.name), ['Cheddar', 'Œuf']);
+      expect(choices.last.id, matches(OptionChoice.idPattern));
+      expect(choices.last.id, isNot(choices.first.id));
+    });
+
+    testWidgets('un choix sans id en reçoit un, même sans modification',
+        (tester) async {
+      final read = await _pump(tester, [
+        _supplements(['Emmental', 'Cheddar'])
+      ]);
+      await tester.pumpAndSettle();
+
+      // Aucune saisie : l'éditeur remonte quand même les id attribués.
+      final first = read().single.choices;
+      expect(first.map((c) => c.id),
+          everyElement(matches(OptionChoice.idPattern)));
+
+      // Et ils restent stables aux émissions suivantes.
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'Emmental'), 'Gouda');
+      await tester.pumpAndSettle();
+      expect(read().single.choices.map((c) => c.id), first.map((c) => c.id));
     });
   });
 }

@@ -7,6 +7,7 @@ import '../models/menu_category.dart';
 import '../models/global_category.dart';
 import '../models/library_image.dart';
 import '../utils/category_naming.dart';
+import '../utils/option_choice_ids.dart';
 
 /// Service dédié à la gestion des menus depuis l'app admin :
 /// - catégories par restaurant (`restaurants/{id}/categories`)
@@ -250,6 +251,51 @@ class MenuManagementService {
         'imageUrl': target,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+      ops++;
+      updated++;
+      if (ops >= 450) {
+        await batch.commit();
+        batch = _firestore.batch();
+        ops = 0;
+      }
+    }
+    if (ops > 0) await batch.commit();
+    return updated;
+  }
+
+  /// Compte, sur tous les plats (`menuItems`, tous restaurants), les choix
+  /// d'options qui n'ont pas encore d'identifiant. N'écrit rien.
+  Future<({int items, int choices})> countMissingChoiceIds() async {
+    final snap = await _menuItems.get();
+    var items = 0;
+    var choices = 0;
+    for (final doc in snap.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final added = fillMissingChoiceIds(data['optionGroups']).added;
+      if (added > 0) {
+        items++;
+        choices += added;
+      }
+    }
+    return (items: items, choices: choices);
+  }
+
+  /// Donne un identifiant à chaque choix d'option qui n'en a pas, sur tous les
+  /// plats. Relit les plats au moment d'écrire (pour ne pas réécrire un état
+  /// périmé, ex. une rupture posée par le resto depuis le comptage), ne
+  /// réécrit que `optionGroups` et seulement sur les plats concernés.
+  /// Idempotente. Retourne le nombre de plats mis à jour.
+  Future<int> generateMissingChoiceIds() async {
+    final snap = await _menuItems.get();
+    var updated = 0;
+    var batch = _firestore.batch();
+    var ops = 0;
+    for (final doc in snap.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final fill = fillMissingChoiceIds(data['optionGroups']);
+      if (fill.added == 0) continue;
+
+      batch.update(doc.reference, {'optionGroups': fill.groups});
       ops++;
       updated++;
       if (ops >= 450) {

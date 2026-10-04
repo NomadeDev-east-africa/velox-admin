@@ -23,8 +23,7 @@ class ParsedMenu {
     this.supplementCategoriesSpecified = false,
   });
 
-  int get itemCount =>
-      categories.fold(0, (sum, c) => sum + c.items.length);
+  int get itemCount => categories.fold(0, (sum, c) => sum + c.items.length);
 }
 
 class ParsedCategory {
@@ -89,7 +88,9 @@ class ParsedItem {
         type: OptionType.single,
         required: true,
         choices: [
-          for (final e in sizes) OptionChoice(name: e.key, price: e.value - base),
+          for (final e in sizes)
+            OptionChoice(
+                id: OptionChoice.newId(), name: e.key, price: e.value - base),
         ],
       ));
     }
@@ -99,12 +100,17 @@ class ParsedItem {
         type: OptionType.single,
         required: false,
         choices: [
-          const OptionChoice(name: 'Seul', price: 0),
-          OptionChoice(name: 'Menu', price: menuPrice! - basePrice),
+          OptionChoice(id: OptionChoice.newId(), name: 'Seul', price: 0),
+          OptionChoice(
+              id: OptionChoice.newId(),
+              name: 'Menu',
+              price: menuPrice! - basePrice),
         ],
       ));
     }
-    groups.addAll(extraGroups);
+    // Les groupes « extra » sont construits une seule fois mais ce plat peut
+    // être construit plusieurs fois : nouveaux id à chaque appel.
+    groups.addAll(extraGroups.map((g) => g.withNewChoiceIds()));
     return groups;
   }
 }
@@ -166,7 +172,8 @@ class MenuParser {
         pendingName = null;
         final price = _toInt(m.group(2)!);
         if (inSupplements) {
-          supplements.add(OptionChoice(name: name, price: price));
+          supplements.add(
+              OptionChoice(id: OptionChoice.newId(), name: name, price: price));
         } else {
           current ??= _pushCategory(categories, 'Autres');
           int? menuPrice;
@@ -234,7 +241,8 @@ class MenuParser {
             if (names.isNotEmpty) {
               supplementCategoriesSpecified = true;
               for (final n in names) {
-                supplementCategories.add(standardizeCategoryName(n).toLowerCase());
+                supplementCategories
+                    .add(standardizeCategoryName(n).toLowerCase());
               }
             }
           }
@@ -308,8 +316,28 @@ class MenuParser {
 
   // Petits mots (articles, prépositions, conjonctions) laissés invariables.
   static const _invariantWords = {
-    'de', 'du', 'des', 'd', 'la', 'le', 'les', 'l', 'au', 'aux', 'a', 'à',
-    'et', 'ou', 'en', 'sur', 'par', 'pour', 'avec', 'sans', 'un', 'une',
+    'de',
+    'du',
+    'des',
+    'd',
+    'la',
+    'le',
+    'les',
+    'l',
+    'au',
+    'aux',
+    'a',
+    'à',
+    'et',
+    'ou',
+    'en',
+    'sur',
+    'par',
+    'pour',
+    'avec',
+    'sans',
+    'un',
+    'une',
   };
 
   /// Met un mot français au pluriel selon une heuristique simple.
@@ -327,9 +355,8 @@ class MenuParser {
     return '${w}s';
   }
 
-  static String _capitalize(String w) => w.isEmpty
-      ? w
-      : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}';
+  static String _capitalize(String w) =>
+      w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}';
 
   /// Règle de standardisation des prix : +10 % puis arrondi à la centaine la
   /// plus proche. Un prix nul (non renseigné) reste nul. Partagée par les deux
