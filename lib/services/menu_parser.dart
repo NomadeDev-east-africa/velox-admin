@@ -396,6 +396,23 @@ class MenuParser {
     return raw + _margin(raw);
   }
 
+  /// Inverse de [markupPrice] : marge NOMADE contenue dans un prix menu
+  /// déjà majoré (tous les prix menu incluent la marge, cf. grille).
+  /// Pour un prix hors grille (ex. après promo restaurant), approximation :
+  /// marge de la tranche du prix diminué de sa propre marge.
+  static int marginIncludedIn(int finalPrice) {
+    if (finalPrice < 300) return 0;
+    for (final m in _marginSteps) {
+      final raw = finalPrice - m;
+      if (raw > 0 && _margin(raw) == m) return m;
+    }
+    return _margin(finalPrice - _margin(finalPrice));
+  }
+
+  static const _marginSteps = [
+    0, 50, 100, 150, 200, 250, 300, 350, 400, 500, 600, 1000, 1500, 2000, 2500,
+  ];
+
   static int _margin(int p) {
     if (p < 300) return 0;
     if (p < 800) return 50;

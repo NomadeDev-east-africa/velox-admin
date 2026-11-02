@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 
 import '../../constants.dart';
 import '../../models/order_tracking.dart';
+import '../../widgets/period_filter.dart';
 
 /// Suivi complet du cycle de vie des commandes : créée → en préparation
 /// (resto) → prête → livreur en route vers le resto → en livraison →
@@ -36,6 +37,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   String _searchQuery = '';
   OrderPhase? _filterPhase;
+
+  /// Période chargée (toutes les commandes de la période, sans plafond).
+  /// 7 jours par défaut pour garder sous les yeux les commandes en cours
+  /// passées la veille au soir.
+  Period _period = Period.last7Days();
 
   /// Titre d'onglet capturé au démarrage, restauré quand plus rien n'est
   /// critique — permet d'alerter l'admin même si le son est coupé ou que
@@ -141,10 +147,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
         _buildHeader(),
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: _firestore
-                .collection('orders')
-                .orderBy('createdAt', descending: true)
-                .limit(200)
+            stream: _period
+                .apply(_firestore.collection('orders'), 'createdAt')
                 .snapshots(),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
@@ -200,7 +204,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                           size: 64, color: Colors.grey.shade400),
                       const SizedBox(height: 16),
                       Text(
-                        'Aucune commande',
+                        'Aucune commande ${_period.label}',
                         style: TextStyle(color: Colors.grey.shade600),
                       ),
                     ],
@@ -248,6 +252,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 onPressed: () => setState(() => _soundEnabled = !_soundEnabled),
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: PeriodFilterBar(
+              period: _period,
+              onChanged: (p) => setState(() => _period = p),
+            ),
           ),
           const SizedBox(height: 12),
           SingleChildScrollView(

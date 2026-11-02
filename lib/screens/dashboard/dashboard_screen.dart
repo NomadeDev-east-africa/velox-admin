@@ -7,6 +7,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../constants.dart';
 import '../../services/admin_push_notifications_service.dart';
 import '../../widgets/sidebar.dart';
+import '../accounting/accounting_screen.dart';
 import '../drivers/drivers_list_screen.dart';
 import '../restaurants/restaurants_list_screen.dart';
 import '../categories/global_categories_screen.dart';
@@ -142,6 +143,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return const UsersScreen();
       case 'stats':
         return const StatisticsScreen();
+      case 'accounting':
+        return const AccountingScreen();
       case 'notifications':
         return const BroadcastNotificationScreen();
       case 'promoCodes':
@@ -268,6 +271,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return 'Utilisateurs';
       case 'stats':
         return 'Statistiques';
+      case 'accounting':
+        return 'Comptabilité';
       case 'notifications':
         return 'Notifications';
       case 'promoCodes':

@@ -172,6 +172,14 @@ class Urls {
   static const String openStreetMapTile =
       'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
   static const String openStreetMapCopyright = 'OpenStreetMap contributors';
+
+  /// Fond de carte CARTO Voyager (raster). La clé retire le filigrane
+  /// « API key required » ; quota gratuit 5 M tuiles/mois, tous projets
+  /// confondus. Attribution CARTO + OpenStreetMap obligatoire.
+  static const String cartoApiKey = 'cb1_3s8x_1_596fb39c650dd92b3b75e435';
+  static const String cartoVoyagerTile =
+      'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=$cartoApiKey';
+  static const String cartoCopyright = 'CARTO';
   static const String privacyPolicy = 'https://velox.dj/privacy';
   static const String termsOfService = 'https://velox.dj/terms';
   static const String supportEmail = 'support@velox.dj';

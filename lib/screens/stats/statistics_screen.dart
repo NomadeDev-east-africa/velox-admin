@@ -4,14 +4,22 @@ import 'package:intl/intl.dart';
 
 import '../../constants.dart';
 import '../../models/order_tracking.dart';
+import '../../widgets/period_filter.dart';
 
 /// Page Statistiques — remplace le placeholder "À venir". Suit le pattern
 /// déjà utilisé dans dashboard_home.dart (StreamBuilders imbriqués, comptage
 /// client-side), sans dépendance de graphique.
-class StatisticsScreen extends StatelessWidget {
+class StatisticsScreen extends StatefulWidget {
   const StatisticsScreen({super.key});
 
-  static const _ordersWindow = 500;
+  @override
+  State<StatisticsScreen> createState() => _StatisticsScreenState();
+}
+
+class _StatisticsScreenState extends State<StatisticsScreen> {
+  /// Commandes et courses comptées sur cette période, sans plafond (avant :
+  /// fenêtre glissante des 500 dernières, qui faussait le chiffre d'affaires).
+  Period _period = Period.thisMonth();
 
   @override
   Widget build(BuildContext context) {
@@ -36,17 +44,18 @@ class StatisticsScreen extends StatelessWidget {
                         .snapshots(),
                     builder: (context, usersSnap) {
                       return StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('orders')
-                            .orderBy('createdAt', descending: true)
-                            .limit(_ordersWindow)
+                        stream: _period
+                            .apply(
+                                FirebaseFirestore.instance.collection('orders'),
+                                'createdAt')
                             .snapshots(),
                         builder: (context, ordersSnap) {
                           return StreamBuilder<QuerySnapshot>(
-                            stream: FirebaseFirestore.instance
-                                .collection('taxiRides')
-                                .orderBy('requestedAt', descending: true)
-                                .limit(_ordersWindow)
+                            stream: _period
+                                .apply(
+                                    FirebaseFirestore.instance
+                                        .collection('taxiRides'),
+                                    'requestedAt')
                                 .snapshots(),
                             builder: (context, ridesSnap) {
                               final loading = !restoSnap.hasData ||
@@ -122,7 +131,7 @@ class StatisticsScreen extends StatelessWidget {
       }
     }
 
-    // Commandes (fenêtre des 500 dernières)
+    // Commandes de la période
     final orders = orderDocs
         .map((d) =>
             OrderTracking.fromMap(d.id, d.data() as Map<String, dynamic>))
@@ -134,7 +143,7 @@ class StatisticsScreen extends StatelessWidget {
     final ongoing = orders.where((o) => !o.isTerminal).length;
     final revenue = delivered.fold<num>(0, (sum, o) => sum + o.total);
 
-    // Top 5 restaurants par nombre de commandes (fenêtre des 500 dernières)
+    // Top 5 restaurants par nombre de commandes sur la période
     final countByRestaurant = <String, int>{};
     for (final o in orders) {
       if (o.restaurantName.isEmpty) continue;
@@ -144,7 +153,7 @@ class StatisticsScreen extends StatelessWidget {
     final topRestaurants = countByRestaurant.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
-    // Courses VTC (fenêtre des 500 dernières) — mêmes valeurs de `status`
+    // Courses VTC de la période — mêmes valeurs de `status`
     // que `taxi_rides_screen.dart` (requested/accepted/started/completed/cancelled).
     int rideCompleted = 0, rideCancelled = 0;
     num rideRevenue = 0;
@@ -170,6 +179,11 @@ class StatisticsScreen extends StatelessWidget {
               fontSize: 24, fontWeight: FontWeight.bold, color: textDarkColor),
         ),
         const SizedBox(height: defaultPadding),
+        PeriodFilterBar(
+          period: _period,
+          onChanged: (p) => setState(() => _period = p),
+        ),
+        const SizedBox(height: largePadding),
         _sectionTitle('Restaurants'),
         _statsRow([
           _StatCardData(
@@ -201,7 +215,7 @@ class StatisticsScreen extends StatelessWidget {
               Colors.purple),
         ]),
         const SizedBox(height: largePadding),
-        _sectionTitle('Commandes (${orders.length} dernières)'),
+        _sectionTitle('Commandes — ${_period.label}'),
         _statsRow([
           _StatCardData(
               Icons.receipt_long, 'Total', '${orders.length}', Colors.orange),
@@ -216,7 +230,7 @@ class StatisticsScreen extends StatelessWidget {
               '${NumberFormat('#,###').format(revenue)} FDJ', successColor),
         ]),
         const SizedBox(height: largePadding),
-        _sectionTitle('Courses VTC (${rideDocs.length} dernières)'),
+        _sectionTitle('Courses VTC — ${_period.label}'),
         _statsRow([
           _StatCardData(
               Icons.local_taxi, 'Total', '${rideDocs.length}', Colors.blue),
@@ -231,7 +245,7 @@ class StatisticsScreen extends StatelessWidget {
               '${NumberFormat('#,###').format(rideRevenue)} FDJ', successColor),
         ]),
         const SizedBox(height: largePadding),
-        _sectionTitle('Top restaurants (${orders.length} dernières commandes)'),
+        _sectionTitle('Top restaurants — ${_period.label}'),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(defaultPadding),

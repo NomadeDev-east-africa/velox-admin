@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../constants.dart';
+import '../../widgets/period_filter.dart';
 
 class TaxiRidesScreen extends StatefulWidget {
   const TaxiRidesScreen({super.key});
@@ -14,6 +15,9 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final ScrollController _horizontalController = ScrollController();
   String _filterStatus = 'tous';
+
+  /// Toutes les courses de la période (avant : 200 dernières seulement).
+  Period _period = Period.last7Days();
 
   @override
   void dispose() {
@@ -95,6 +99,14 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
                     setState(() => _searchQuery = v.toLowerCase()),
               ),
               const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: PeriodFilterBar(
+                  period: _period,
+                  onChanged: (p) => setState(() => _period = p),
+                ),
+              ),
+              const SizedBox(height: 12),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
@@ -125,10 +137,8 @@ class _TaxiRidesScreenState extends State<TaxiRidesScreen> {
         // Liste courses
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: _firestore
-                .collection('taxiRides')
-                .orderBy('requestedAt', descending: true)
-                .limit(200)
+            stream: _period
+                .apply(_firestore.collection('taxiRides'), 'requestedAt')
                 .snapshots(),
             builder: (context, snapshot) {
               if (snapshot.hasError) {

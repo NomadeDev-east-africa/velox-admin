@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -16,14 +17,29 @@ class _MapsScreenState extends State<MapsScreen> {
   late final MapController _mapController;
   final LatLng _djiboutiCenter = const LatLng(11.5940, 43.1470);
 
+  /// Au-delà de ce délai sans nouvelle position, le livreur/chauffeur est
+  /// considéré déconnecté même si `isOnline` est resté à true (app tuée,
+  /// téléphone éteint…) : sa position est figée et ne reflète plus la réalité.
+  static const Duration _staleAfter = Duration(minutes: 10);
+
+  /// Affiche aussi les positions figées (grisées) — masquées par défaut.
+  bool _showStale = false;
+
+  /// Réévalue l'ancienneté des positions même sans nouveau snapshot.
+  Timer? _ticker;
+
   @override
   void initState() {
     super.initState();
     _mapController = MapController();
+    _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
+    _ticker?.cancel();
     _mapController.dispose();
     super.dispose();
   }
@@ -45,6 +61,52 @@ class _MapsScreenState extends State<MapsScreen> {
     }
     return null;
   }
+
+  /// Heure de la dernière position connue :
+  /// - drivers : `currentLocation.updatedAt` (écrit à chaque position)
+  /// - livreurs : `updatedAt` (écrit avec chaque `currentLocation`)
+  DateTime? _lastSeen(Map<String, dynamic> data) {
+    final loc = data['currentLocation'];
+    if (loc is Map) {
+      final t = Formatters.parseFirestoreDate(loc['updatedAt']);
+      if (t != null) return t;
+    }
+    return Formatters.parseFirestoreDate(data['lastHeartbeat']) ??
+        Formatters.parseFirestoreDate(data['updatedAt']);
+  }
+
+  bool _isStale(Map<String, dynamic> data) {
+    final t = _lastSeen(data);
+    return t == null || DateTime.now().difference(t) > _staleAfter;
+  }
+
+  String _lastSeenLabel(Map<String, dynamic> data) {
+    final t = _lastSeen(data);
+    if (t == null) return 'Position : date inconnue';
+    final d = DateTime.now().difference(t);
+    final String ago;
+    if (d.inMinutes < 1) {
+      ago = "à l'instant";
+    } else if (d.inMinutes < 60) {
+      ago = 'il y a ${d.inMinutes} min';
+    } else if (d.inHours < 24) {
+      ago = 'il y a ${d.inHours} h';
+    } else {
+      ago = 'il y a ${d.inDays} j';
+    }
+    return 'Position mise à jour $ago';
+  }
+
+  /// Ne garde que les positions récentes, sauf si [_showStale].
+  List<QueryDocumentSnapshot> _visible(List<QueryDocumentSnapshot> docs) {
+    if (_showStale) return docs;
+    return docs
+        .where((d) => !_isStale(d.data() as Map<String, dynamic>))
+        .toList();
+  }
+
+  int _staleCount(List<QueryDocumentSnapshot> docs) =>
+      docs.where((d) => _isStale(d.data() as Map<String, dynamic>)).length;
 
   /// Applique un offset angulaire pour les marqueurs au même endroit.
   /// Si N personnes sont au même point, elles sont réparties sur un cercle
@@ -150,12 +212,16 @@ class _MapsScreenState extends State<MapsScreen> {
                               .where('isOnline', isEqualTo: true)
                               .snapshots(),
                           builder: (_, drvSnap) {
-                            final livCount =
-                                livSnap.data?.docs.length ?? 0;
-                            final drvCount =
-                                drvSnap.data?.docs.length ?? 0;
+                            final livDocs = livSnap.data?.docs ?? [];
+                            final drvDocs = drvSnap.data?.docs ?? [];
+                            final livStale = _staleCount(livDocs);
+                            final drvStale = _staleCount(drvDocs);
+                            final stale = livStale + drvStale;
                             return Text(
-                              '$livCount livreur(s) • $drvCount chauffeur(s) en ligne',
+                              '${livDocs.length - livStale} livreur(s) • '
+                              '${drvDocs.length - drvStale} chauffeur(s) en ligne'
+                              '${stale > 0 ? ' • $stale position(s) figée(s) '
+                                  '(sans signal depuis +${_staleAfter.inMinutes} min)' : ''}',
                               style: const TextStyle(
                                   fontSize: 12, color: textLightColor),
                             );
@@ -167,6 +233,16 @@ class _MapsScreenState extends State<MapsScreen> {
                 ),
                 Row(
                   children: [
+                    FilterChip(
+                      label: const Text('Positions figées'),
+                      tooltip:
+                          'Afficher aussi (en gris) les comptes « en ligne » '
+                          'sans position récente',
+                      selected: _showStale,
+                      onSelected: (v) => setState(() => _showStale = v),
+                      selectedColor: Colors.grey.shade300,
+                    ),
+                    const SizedBox(width: 6),
                     _controlBtn(Icons.zoom_in, _zoomIn),
                     const SizedBox(width: 6),
                     _controlBtn(Icons.zoom_out, _zoomOut),
@@ -191,10 +267,10 @@ class _MapsScreenState extends State<MapsScreen> {
                     .where('isOnline', isEqualTo: true)
                     .snapshots(),
                 builder: (_, drvSnap) {
-                  final livreurMarkers = _resolveMarkers(
-                      livSnap.data?.docs ?? []);
-                  final driverMarkers = _resolveMarkers(
-                      drvSnap.data?.docs ?? []);
+                  final livreurMarkers =
+                      _resolveMarkers(_visible(livSnap.data?.docs ?? []));
+                  final driverMarkers =
+                      _resolveMarkers(_visible(drvSnap.data?.docs ?? []));
 
                   return FlutterMap(
                     mapController: _mapController,
@@ -209,16 +285,15 @@ class _MapsScreenState extends State<MapsScreen> {
                     ),
                     children: [
                       TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        urlTemplate: Urls.cartoVoyagerTile,
                         userAgentPackageName: 'com.velox.admin',
                       ),
 
                       // Marqueurs livreurs (moto — orange)
                       MarkerLayer(
                         markers: livreurMarkers.map((e) {
-                          final isAvailable =
-                              e.data['isAvailable'] ?? false;
+                          final isAvailable = e.data['isAvailable'] ?? false;
+                          final stale = _isStale(e.data);
                           return Marker(
                             point: e.displayPos,
                             width: 46,
@@ -228,23 +303,30 @@ class _MapsScreenState extends State<MapsScreen> {
                                 name: e.data['name'] ?? 'Livreur',
                                 phone: e.data['phone'] ?? '',
                                 plate: e.data['licensePlate'] ?? '',
-                                status: isAvailable
-                                    ? 'Disponible'
-                                    : 'En livraison',
-                                statusColor: isAvailable
-                                    ? successColor
-                                    : warningColor,
+                                status: stale
+                                    ? 'Sans signal'
+                                    : isAvailable
+                                        ? 'Disponible'
+                                        : 'En livraison',
+                                statusColor: stale
+                                    ? Colors.grey
+                                    : isAvailable
+                                        ? successColor
+                                        : warningColor,
+                                lastSeen: _lastSeenLabel(e.data),
                                 icon: Icons.motorcycle,
-                                color: Colors.orange,
+                                color: stale ? Colors.grey : Colors.orange,
                                 realPos: e.realPos,
                                 displayPos: e.displayPos,
                               ),
                               child: _markerWidget(
                                 icon: Icons.motorcycle,
-                                color: Colors.orange,
-                                dotColor: isAvailable
-                                    ? successColor
-                                    : warningColor,
+                                color: stale ? Colors.grey : Colors.orange,
+                                dotColor: stale
+                                    ? Colors.grey.shade400
+                                    : isAvailable
+                                        ? successColor
+                                        : warningColor,
                               ),
                             ),
                           );
@@ -254,8 +336,8 @@ class _MapsScreenState extends State<MapsScreen> {
                       // Marqueurs chauffeurs (voiture — bleu)
                       MarkerLayer(
                         markers: driverMarkers.map((e) {
-                          final isAvailable =
-                              e.data['isAvailable'] ?? false;
+                          final isAvailable = e.data['isAvailable'] ?? false;
+                          final stale = _isStale(e.data);
                           return Marker(
                             point: e.displayPos,
                             width: 46,
@@ -265,23 +347,30 @@ class _MapsScreenState extends State<MapsScreen> {
                                 name: e.data['name'] ?? 'Chauffeur',
                                 phone: e.data['phone'] ?? '',
                                 plate: e.data['licensePlate'] ?? '',
-                                status: isAvailable
-                                    ? 'Disponible'
-                                    : 'En course',
-                                statusColor: isAvailable
-                                    ? successColor
-                                    : infoColor,
+                                status: stale
+                                    ? 'Sans signal'
+                                    : isAvailable
+                                        ? 'Disponible'
+                                        : 'En course',
+                                statusColor: stale
+                                    ? Colors.grey
+                                    : isAvailable
+                                        ? successColor
+                                        : infoColor,
+                                lastSeen: _lastSeenLabel(e.data),
                                 icon: Icons.directions_car,
-                                color: primaryColor,
+                                color: stale ? Colors.grey : primaryColor,
                                 realPos: e.realPos,
                                 displayPos: e.displayPos,
                               ),
                               child: _markerWidget(
                                 icon: Icons.directions_car,
-                                color: primaryColor,
-                                dotColor: isAvailable
-                                    ? successColor
-                                    : infoColor,
+                                color: stale ? Colors.grey : primaryColor,
+                                dotColor: stale
+                                    ? Colors.grey.shade400
+                                    : isAvailable
+                                        ? successColor
+                                        : infoColor,
                               ),
                             ),
                           );
@@ -290,8 +379,8 @@ class _MapsScreenState extends State<MapsScreen> {
 
                       const RichAttributionWidget(
                         attributions: [
-                          TextSourceAttribution(
-                              'OpenStreetMap contributors'),
+                          TextSourceAttribution(Urls.cartoCopyright),
+                          TextSourceAttribution(Urls.openStreetMapCopyright),
                         ],
                       ),
                     ],
@@ -371,6 +460,7 @@ class _MapsScreenState extends State<MapsScreen> {
     required String plate,
     required String status,
     required Color statusColor,
+    required String lastSeen,
     required IconData icon,
     required Color color,
     required LatLng realPos,
@@ -436,6 +526,8 @@ class _MapsScreenState extends State<MapsScreen> {
               Icons.location_on,
               '${realPos.latitude.toStringAsFixed(5)}, ${realPos.longitude.toStringAsFixed(5)}',
             ),
+            const SizedBox(height: 6),
+            _infoRow(Icons.schedule, lastSeen),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -492,8 +584,7 @@ class _MapsScreenState extends State<MapsScreen> {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.grey.shade300),
         boxShadow: [
-          BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05), blurRadius: 4),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4),
         ],
       ),
       child: IconButton(
@@ -516,8 +607,7 @@ class _MapsScreenState extends State<MapsScreen> {
         ),
         const SizedBox(width: 6),
         Text(label,
-            style:
-                const TextStyle(fontSize: 12, color: textLightColor)),
+            style: const TextStyle(fontSize: 12, color: textLightColor)),
       ],
     );
   }

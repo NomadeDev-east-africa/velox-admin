@@ -149,6 +149,11 @@ class _SidebarState extends State<Sidebar> {
                     page: 'stats',
                   ),
                   _buildMenuItem(
+                    icon: Icons.account_balance_wallet,
+                    title: 'Comptabilité',
+                    page: 'accounting',
+                  ),
+                  _buildMenuItem(
                     icon: Icons.campaign,
                     title: 'Notifications',
                     page: 'notifications',
