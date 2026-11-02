@@ -40,7 +40,7 @@ automatiquement (il faut choisir la période concernée).
   « Sans signal », masqué par défaut (puce « Positions figées » pour les voir
   en gris), heure de dernière position dans la fiche.
 
-## Déploiement — À FAIRE (rien n'est déployé ni commité)
+## Déploiement — FAIT le 02/11/2026 (règles via CLI depuis le fichier unique + hosting, commit f3db5ff)
 - Admin web : `flutter build web` OK.
 - Règles : **source unique = `FINAL 253 NOMADE/client app/production/firestores regles unique/firestore_rules.rules`**
   (confirmé par l'utilisateur le 02/11/2026 ; `nomade_client/functions/scripts/sim/firestore_rules_prod.rules`
