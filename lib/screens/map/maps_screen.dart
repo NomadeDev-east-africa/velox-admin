@@ -64,7 +64,9 @@ class _MapsScreenState extends State<MapsScreen> {
 
   /// Heure de la dernière position connue :
   /// - drivers : `currentLocation.updatedAt` (écrit à chaque position)
-  /// - livreurs : `updatedAt` (écrit avec chaque `currentLocation`)
+  /// - livreurs : `lastHeartbeat`, écrit uniquement avec la position par les
+  ///   nouvelles versions de l'app (PROMPT_POSITION_CARTE_ADMIN.md) ; à défaut
+  ///   `updatedAt`, approximatif car aussi touché par la dispo et le token FCM.
   DateTime? _lastSeen(Map<String, dynamic> data) {
     final loc = data['currentLocation'];
     if (loc is Map) {
@@ -73,6 +75,46 @@ class _MapsScreenState extends State<MapsScreen> {
     }
     return Formatters.parseFirestoreDate(data['lastHeartbeat']) ??
         Formatters.parseFirestoreDate(data['updatedAt']);
+  }
+
+  /// Au-delà, la position est jugée imprécise (Wi-Fi / antenne plutôt que GPS).
+  static const double _poorAccuracyMeters = 50;
+
+  /// Précision de la position en mètres, si l'app l'a envoyée :
+  /// - drivers : `currentLocation.accuracy`
+  /// - livreurs : `locationAccuracy` (racine)
+  double? _accuracy(Map<String, dynamic> data) {
+    final loc = data['currentLocation'];
+    final v = (loc is Map ? loc['accuracy'] : null) ?? data['locationAccuracy'];
+    return v is num && v > 0 ? v.toDouble() : null;
+  }
+
+  String _accuracyLabel(Map<String, dynamic> data) {
+    final a = _accuracy(data);
+    if (a == null) return 'Précision : inconnue';
+    final m = a.round();
+    return a > _poorAccuracyMeters
+        ? 'Précision : ±$m m (imprécise, position approximative)'
+        : 'Précision : ±$m m';
+  }
+
+  /// Cercle de précision autour de la position réelle (pas de la position
+  /// décalée d'affichage), pour montrer la zone où se trouve vraiment la
+  /// personne quand le GPS est imprécis.
+  CircleMarker? _accuracyCircle(
+      ({LatLng displayPos, LatLng realPos, Map<String, dynamic> data}) e,
+      Color color) {
+    final a = _accuracy(e.data);
+    if (a == null || _isStale(e.data)) return null;
+    final poor = a > _poorAccuracyMeters;
+    return CircleMarker(
+      point: e.realPos,
+      radius: a,
+      useRadiusInMeter: true,
+      color: (poor ? Colors.red : color).withValues(alpha: 0.10),
+      borderColor: (poor ? Colors.red : color).withValues(alpha: 0.5),
+      borderStrokeWidth: 1.5,
+    );
   }
 
   bool _isStale(Map<String, dynamic> data) {
@@ -289,6 +331,18 @@ class _MapsScreenState extends State<MapsScreen> {
                         userAgentPackageName: 'com.velox.admin',
                       ),
 
+                      // Cercles de précision GPS (rouge si > 50 m)
+                      CircleLayer(
+                        circles: [
+                          for (final e in livreurMarkers)
+                            if (_accuracyCircle(e, Colors.orange) case final c?)
+                              c,
+                          for (final e in driverMarkers)
+                            if (_accuracyCircle(e, primaryColor) case final c?)
+                              c,
+                        ],
+                      ),
+
                       // Marqueurs livreurs (moto — orange)
                       MarkerLayer(
                         markers: livreurMarkers.map((e) {
@@ -314,6 +368,7 @@ class _MapsScreenState extends State<MapsScreen> {
                                         ? successColor
                                         : warningColor,
                                 lastSeen: _lastSeenLabel(e.data),
+                                accuracy: _accuracyLabel(e.data),
                                 icon: Icons.motorcycle,
                                 color: stale ? Colors.grey : Colors.orange,
                                 realPos: e.realPos,
@@ -358,6 +413,7 @@ class _MapsScreenState extends State<MapsScreen> {
                                         ? successColor
                                         : infoColor,
                                 lastSeen: _lastSeenLabel(e.data),
+                                accuracy: _accuracyLabel(e.data),
                                 icon: Icons.directions_car,
                                 color: stale ? Colors.grey : primaryColor,
                                 realPos: e.realPos,
@@ -461,6 +517,7 @@ class _MapsScreenState extends State<MapsScreen> {
     required String status,
     required Color statusColor,
     required String lastSeen,
+    required String accuracy,
     required IconData icon,
     required Color color,
     required LatLng realPos,
@@ -528,6 +585,8 @@ class _MapsScreenState extends State<MapsScreen> {
             ),
             const SizedBox(height: 6),
             _infoRow(Icons.schedule, lastSeen),
+            const SizedBox(height: 6),
+            _infoRow(Icons.gps_fixed, accuracy),
             const SizedBox(height: 16),
             Row(
               children: [

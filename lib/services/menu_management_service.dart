@@ -23,8 +23,10 @@ class MenuManagementService {
       _firestore.collection('menuImageLibrary');
   CollectionReference get _globalCategories =>
       _firestore.collection('menuCategories');
-  CollectionReference _categories(String restaurantId) =>
-      _firestore.collection('restaurants').doc(restaurantId).collection('categories');
+  CollectionReference _categories(String restaurantId) => _firestore
+      .collection('restaurants')
+      .doc(restaurantId)
+      .collection('categories');
 
   // ==================== CATÉGORIES GLOBALES ====================
 
@@ -52,10 +54,53 @@ class MenuManagementService {
       ..sort(_byOrderThenName);
   }
 
-  Future<String> createGlobalCategory(GlobalCategory category) async {
+  /// Crée la catégorie **seulement si aucune autre ne porte la même
+  /// [categoryKey]**, de façon atomique. Retourne l'id créé, ou `null` si elle
+  /// existait déjà.
+  ///
+  /// L'id du document est la clé normalisée elle-même (`[a-z0-9]+`) et la
+  /// création passe par une transaction : deux imports simultanés, deux admins
+  /// ou un double clic visent le **même** document, un seul le crée. C'est ce
+  /// qui manquait quand « Accompagnements » et « Sea Foods » ont été créés deux
+  /// fois (31/08 et 07/09/2026) : la vérification lisait la liste puis
+  /// ajoutait un document à id aléatoire, sans rien empêcher entre les deux.
+  ///
+  /// Les anciennes catégories ont des ids aléatoires : l'appelant doit donc
+  /// toujours vérifier aussi la liste complète par [categoryKey]
+  /// (cf. [ensureGlobalCategories]).
+  Future<String?> createGlobalCategoryIfAbsent(GlobalCategory category) async {
+    final key = categoryKey(category.name);
+    if (key.isEmpty) return null;
+    final ref = _globalCategories.doc(key);
     final data = category.toMap()..['createdAt'] = FieldValue.serverTimestamp();
-    final ref = await _globalCategories.add(data);
-    return ref.id;
+    return _firestore.runTransaction<String?>((tx) async {
+      final snap = await tx.get(ref);
+      if (snap.exists) {
+        final existingName =
+            ((snap.data() as Map<String, dynamic>?)?['name'] ?? '').toString();
+        // Le document porte encore cette clé : la catégorie existe déjà.
+        if (categoryKey(existingName) == key) return null;
+        // Document renommé depuis (son id garde l'ancienne clé) : on crée
+        // ailleurs, la liste complète a déjà été vérifiée par l'appelant.
+        final other = _globalCategories.doc();
+        tx.set(other, data);
+        return other.id;
+      }
+      tx.set(ref, data);
+      return ref.id;
+    });
+  }
+
+  /// Autre catégorie (id différent de [exceptId]) portant la même
+  /// [categoryKey] que [name], ou `null`.
+  Future<GlobalCategory?> findCategoryWithSameKey(String name,
+      {String? exceptId}) async {
+    final key = categoryKey(name);
+    if (key.isEmpty) return null;
+    for (final c in await getGlobalCategories()) {
+      if (c.id != exceptId && categoryKey(c.name) == key) return c;
+    }
+    return null;
   }
 
   Future<void> updateGlobalCategory(GlobalCategory category) async {
@@ -72,10 +117,17 @@ class MenuManagementService {
   ///
   /// Les images ne sont pas touchées : un renommage ne change pas le visuel.
   ///
+  /// Refuse (via [DuplicateCategoryException]) un nom qu'une **autre**
+  /// catégorie porte déjà au sens de [categoryKey] : sinon le renommage crée
+  /// un doublon. L'appelant propose alors [moveItemsAndDeleteCategory].
+  ///
   /// Retourne le nombre de plats mis à jour.
-  Future<int> renameGlobalCategory(GlobalCategory category, String newName) async {
+  Future<int> renameGlobalCategory(
+      GlobalCategory category, String newName) async {
     final target = newName.trim();
     if (target.isEmpty || target == category.name.trim()) return 0;
+    final clash = await findCategoryWithSameKey(target, exceptId: category.id);
+    if (clash != null) throw DuplicateCategoryException(clash);
 
     final updated =
         await _rewriteCategoryNameEverywhere(from: category.name, to: target);
@@ -126,7 +178,8 @@ class MenuManagementService {
     if (target.isEmpty || categoryKey(target) == categoryKey(category.name)) {
       throw ArgumentError('La catégorie cible doit être différente.');
     }
-    final targetImage = imageForCategoryName(target, await getGlobalCategories());
+    final targetImage =
+        imageForCategoryName(target, await getGlobalCategories());
     final moved = await _rewriteCategoryNameEverywhere(
       from: category.name,
       to: target,
@@ -175,7 +228,8 @@ class MenuManagementService {
     var created = 0;
     // `order` doit continuer la suite existante. Se baser sur `existing.length`
     // produisait des collisions dès qu'une catégorie avait été supprimée.
-    var order = existing.fold<int>(-1, (max, c) => c.order > max ? c.order : max) + 1;
+    var order =
+        existing.fold<int>(-1, (max, c) => c.order > max ? c.order : max) + 1;
     for (final entry in namesWithImages.entries) {
       final name = entry.key.trim();
       if (name.isEmpty) continue;
@@ -188,7 +242,10 @@ class MenuManagementService {
           imageUrl: entry.value,
           order: order++,
         );
-        final id = await createGlobalCategory(cat);
+        // Création atomique : si un autre import / admin vient de la créer,
+        // on ne la recrée pas.
+        final id = await createGlobalCategoryIfAbsent(cat);
+        if (id == null) continue;
         byName[key] = cat.copyWith(id: id);
         created++;
       } else if (entry.value != null && !current.hasImage) {
@@ -435,8 +492,8 @@ class MenuManagementService {
   // ==================== BIBLIOTHÈQUE D'IMAGES ====================
 
   Stream<List<LibraryImage>> streamLibraryImages() {
-    return _imageLibrary.orderBy('label').snapshots().map((snap) =>
-        snap.docs.map((d) => LibraryImage.fromFirestore(d)).toList());
+    return _imageLibrary.orderBy('label').snapshots().map(
+        (snap) => snap.docs.map((d) => LibraryImage.fromFirestore(d)).toList());
   }
 
   Future<List<LibraryImage>> getLibraryImages() async {
@@ -483,8 +540,7 @@ class MenuManagementService {
 
   Stream<List<MenuCategory>> streamCategories(String restaurantId) {
     return _categories(restaurantId).snapshots().map((snap) {
-      final list =
-          snap.docs.map((d) => MenuCategory.fromFirestore(d)).toList();
+      final list = snap.docs.map((d) => MenuCategory.fromFirestore(d)).toList();
       list.sort((a, b) {
         final byOrder = a.order.compareTo(b.order);
         return byOrder != 0 ? byOrder : a.name.compareTo(b.name);
@@ -725,4 +781,14 @@ class MenuManagementService {
         .replaceAll(RegExp(r'^_+|_+$'), '');
     return s.isEmpty ? 'image' : s;
   }
+}
+
+/// Levée quand un nom de catégorie est déjà porté (au sens de [categoryKey])
+/// par une autre catégorie du catalogue global.
+class DuplicateCategoryException implements Exception {
+  final GlobalCategory existing;
+  const DuplicateCategoryException(this.existing);
+
+  @override
+  String toString() => 'La catégorie « ${existing.name} » existe déjà.';
 }

@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../constants.dart';
 import '../../models/global_category.dart';
 import '../../services/menu_management_service.dart';
+import '../../utils/category_naming.dart';
 import '../../widgets/library_image_picker.dart';
 
 /// Page **globale** de gestion des catégories de menu (partagées par tous les
@@ -40,18 +41,25 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
                   }
                   final cats = snap.data ?? const <GlobalCategory>[];
                   if (cats.isEmpty) return _emptyState();
-                  return GridView.builder(
-                    padding: const EdgeInsets.fromLTRB(
-                        largePadding, largePadding, largePadding, 90),
-                    gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 240,
-                      mainAxisExtent: 210,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
-                    ),
-                    itemCount: cats.length,
-                    itemBuilder: (_, i) => _categoryCard(cats[i]),
+                  final dupCount = _duplicateCount(cats);
+                  return Column(
+                    children: [
+                      if (dupCount > 0) _duplicateBanner(dupCount),
+                      Expanded(
+                          child: GridView.builder(
+                        padding: const EdgeInsets.fromLTRB(
+                            largePadding, largePadding, largePadding, 90),
+                        gridDelegate:
+                            const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 240,
+                          mainAxisExtent: 210,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                        ),
+                        itemCount: cats.length,
+                        itemBuilder: (_, i) => _categoryCard(cats[i]),
+                      )),
+                    ],
                   );
                 },
               ),
@@ -69,6 +77,47 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Nombre d'entrées en trop (même [categoryKey] qu'une autre).
+  int _duplicateCount(List<GlobalCategory> cats) {
+    final keys = <String>{};
+    var dups = 0;
+    for (final c in cats) {
+      if (!keys.add(categoryKey(c.name))) dups++;
+    }
+    return dups;
+  }
+
+  /// Alerte visible dès qu'un doublon apparaît, avec la fusion en un clic.
+  Widget _duplicateBanner(int count) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(largePadding, 12, largePadding, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.warning_amber_rounded, color: Colors.orange.shade800),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$count catégorie(s) en double détectée(s) '
+              '(même nom ou variante : pluriel, accents, « Nos … »).',
+              style: TextStyle(color: Colors.orange.shade900),
+            ),
+          ),
+          TextButton(
+            onPressed: _busy ? null : _mergeDuplicates,
+            child: const Text('Fusionner'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -134,9 +183,10 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
       builder: (_) => AlertDialog(
         title: const Text('Fusionner les doublons'),
         content: const Text(
-          'Les catégories portant le même nom seront fusionnées : une seule '
-          'entrée est conservée (celle qui a une image en priorité), les '
-          'autres sont supprimées.\n\nLes plats ne sont pas affectés.',
+          'Les catégories portant le même nom (ou une variante : pluriel, '
+          'accents, « Nos … ») seront fusionnées : une seule entrée est '
+          'conservée (celle qui a une image en priorité), les autres sont '
+          'supprimées.\n\nLeurs plats sont rangés dans la catégorie conservée.',
         ),
         actions: [
           TextButton(
@@ -245,7 +295,8 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
                       icon: const CircleAvatar(
                         radius: 16,
                         backgroundColor: Colors.white70,
-                        child: Icon(Icons.more_vert, size: 18, color: Colors.black87),
+                        child: Icon(Icons.more_vert,
+                            size: 18, color: Colors.black87),
                       ),
                       onSelected: (v) {
                         if (v == 'edit') _editCategory(cat);
@@ -254,8 +305,10 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
                       },
                       itemBuilder: (_) => const [
                         PopupMenuItem(value: 'edit', child: Text('Renommer')),
-                        PopupMenuItem(value: 'image', child: Text('Changer l\'image')),
-                        PopupMenuItem(value: 'delete', child: Text('Supprimer')),
+                        PopupMenuItem(
+                            value: 'image', child: Text('Changer l\'image')),
+                        PopupMenuItem(
+                            value: 'delete', child: Text('Supprimer')),
                       ],
                     ),
                   ),
@@ -320,10 +373,27 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
 
   Future<void> _addCategory() async {
     final name = await _promptName(title: 'Nouvelle catégorie');
-    if (name == null || name.trim().isEmpty) return;
-    final created = await _service.ensureGlobalCategories({name.trim(): null});
-    if (mounted && created == 0) {
-      _snack('La catégorie « $name » existe déjà.', Colors.orange);
+    if (name == null || name.trim().isEmpty || _busy) return;
+    setState(() => _busy = true); // bloque le double clic
+    try {
+      final existing = await _service.findCategoryWithSameKey(name.trim());
+      if (existing != null) {
+        _snack(
+            existing.name.trim().toLowerCase() == name.trim().toLowerCase()
+                ? 'La catégorie « ${existing.name} » existe déjà.'
+                : '« ${name.trim()} » existe déjà sous le nom « ${existing.name} ».',
+            Colors.orange);
+        return;
+      }
+      final created =
+          await _service.ensureGlobalCategories({name.trim(): null});
+      if (created == 0) {
+        _snack('La catégorie « ${name.trim()} » existe déjà.', Colors.orange);
+      }
+    } catch (e) {
+      _snack('Erreur: $e', errorColor);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -335,8 +405,53 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
       // Renomme aussi les plats : sans cela ils resteraient sur l'ancien nom.
       final moved = await _service.renameGlobalCategory(cat, name.trim());
       if (mounted && moved > 0) {
-        _snack('$moved plat(s) déplacé(s) vers « ${name.trim()} ».', successColor);
+        _snack(
+            '$moved plat(s) déplacé(s) vers « ${name.trim()} ».', successColor);
       }
+    } on DuplicateCategoryException catch (dup) {
+      // Le nom choisi existe déjà : au lieu de créer un doublon, proposer de
+      // ranger les plats dans la catégorie existante.
+      if (mounted) setState(() => _busy = false);
+      await _offerMergeInto(cat, dup.existing);
+    } catch (e) {
+      _snack('Erreur: $e', errorColor);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Renommage vers un nom déjà pris : propose de déplacer les plats de [cat]
+  /// dans [existing] puis de supprimer [cat].
+  Future<void> _offerMergeInto(
+      GlobalCategory cat, GlobalCategory existing) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Cette catégorie existe déjà'),
+        content: Text(
+          '« ${existing.name} » existe déjà. Renommer créerait un doublon.\n\n'
+          'Voulez-vous plutôt déplacer les plats de « ${cat.name} » vers '
+          '« ${existing.name} » et supprimer « ${cat.name} » ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Déplacer et supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _busy = true);
+    try {
+      final moved = await _service.moveItemsAndDeleteCategory(
+          category: cat, targetName: existing.name);
+      _snack(
+          '$moved plat(s) déplacé(s) vers « ${existing.name} ».', successColor);
     } catch (e) {
       _snack('Erreur: $e', errorColor);
     } finally {
@@ -399,8 +514,8 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
       final Uint8List bytes = await file.readAsBytes();
       final (url, path) =
           await _service.uploadCategoryImage(name: cat.name, bytes: bytes);
-      await _service.updateGlobalCategory(
-          cat.copyWith(imageUrl: url, storagePath: path));
+      await _service
+          .updateGlobalCategory(cat.copyWith(imageUrl: url, storagePath: path));
     } catch (e) {
       _snack('Erreur upload: $e', errorColor);
     } finally {
@@ -432,7 +547,8 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
       return;
     }
 
-    final target = await _promptMoveTarget(cat: cat, used: used, others: others);
+    final target =
+        await _promptMoveTarget(cat: cat, used: used, others: others);
     if (target == null) return;
 
     setState(() => _busy = true);
@@ -442,8 +558,10 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
         targetName: target,
       );
       if (mounted) {
-        _snack('$moved plat(s) déplacé(s) vers « $target ». '
-            'Catégorie « ${cat.name} » supprimée.', successColor);
+        _snack(
+            '$moved plat(s) déplacé(s) vers « $target ». '
+            'Catégorie « ${cat.name} » supprimée.',
+            successColor);
       }
     } catch (e) {
       _snack('Erreur: $e', errorColor);
@@ -519,9 +637,8 @@ class _GlobalCategoriesScreenState extends State<GlobalCategoriesScreen> {
             TextButton(
               // Tant qu'aucune destination n'est choisie, on ne peut pas valider :
               // c'est ce qui garantit qu'aucun plat ne se retrouve orphelin.
-              onPressed: choice == null
-                  ? null
-                  : () => Navigator.pop(context, choice),
+              onPressed:
+                  choice == null ? null : () => Navigator.pop(context, choice),
               style: TextButton.styleFrom(foregroundColor: errorColor),
               child: const Text('Déplacer et supprimer'),
             ),

@@ -139,6 +139,11 @@ class _SidebarState extends State<Sidebar> {
                     page: 'orders',
                   ),
                   _buildMenuItem(
+                    icon: Icons.chat_outlined,
+                    title: 'Commandes privées',
+                    page: 'privateOrders',
+                  ),
+                  _buildMenuItem(
                     icon: Icons.people_outline,
                     title: 'Utilisateurs',
                     page: 'users',

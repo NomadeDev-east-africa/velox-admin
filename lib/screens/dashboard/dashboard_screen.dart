@@ -8,6 +8,7 @@ import '../../constants.dart';
 import '../../services/admin_push_notifications_service.dart';
 import '../../widgets/sidebar.dart';
 import '../accounting/accounting_screen.dart';
+import '../private_orders/private_orders_screen.dart';
 import '../drivers/drivers_list_screen.dart';
 import '../restaurants/restaurants_list_screen.dart';
 import '../categories/global_categories_screen.dart';
@@ -139,6 +140,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return const TaxiRidesScreen();
       case 'orders':
         return const OrdersScreen();
+      case 'privateOrders':
+        return const PrivateOrdersScreen();
       case 'users':
         return const UsersScreen();
       case 'stats':
@@ -267,6 +270,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return 'Courses Taxi';
       case 'orders':
         return 'Suivi des commandes';
+      case 'privateOrders':
+        return 'Commandes privées';
       case 'users':
         return 'Utilisateurs';
       case 'stats':
