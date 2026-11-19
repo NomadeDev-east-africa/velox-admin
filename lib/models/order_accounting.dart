@@ -1,6 +1,7 @@
 import '../constants.dart';
 import '../services/menu_parser.dart';
 import 'order_tracking.dart';
+import 'private_order.dart';
 
 /// Lecture « comptable » d'une commande, pour l'écran Comptabilité.
 ///
@@ -48,6 +49,10 @@ class OrderAccounting {
   /// restaurant.
   final num commission;
 
+  /// Commande privée (WhatsApp, téléphone) saisie dans `privateOrders`,
+  /// et non commande passée dans l'app.
+  final bool isPrivate;
+
   const OrderAccounting({
     required this.id,
     required this.createdAt,
@@ -65,6 +70,7 @@ class OrderAccounting {
     required this.promoDiscount,
     required this.total,
     required this.commission,
+    this.isPrivate = false,
   });
 
   bool get isDelivered => phase == OrderPhase.delivered;
@@ -112,6 +118,51 @@ class OrderAccounting {
       promoDiscount: n(data['promoDiscount']),
       total: n(data['total']),
       commission: estimateCommission(data['items']),
+    );
+  }
+
+  /// Commande privée vue par la comptabilité. Même circuit d'argent qu'une
+  /// commande de l'app : le prix menu va au restaurant (commission NOMADE
+  /// incluse, estimée par la même grille), la livraison au livreur. Pas de
+  /// points fidélité ni de code promo. Seul le statut « Livrée » compte comme
+  /// livré ; « Annulée » → annulée ; « En cours » → en livraison.
+  factory OrderAccounting.fromPrivateOrder(PrivateOrder p) {
+    final OrderPhase phase;
+    switch (p.status) {
+      case PrivateOrderStatus.delivered:
+        phase = OrderPhase.delivered;
+      case PrivateOrderStatus.cancelled:
+        phase = OrderPhase.cancelled;
+      default:
+        phase = OrderPhase.delivering;
+    }
+    return OrderAccounting(
+      id: p.id,
+      createdAt: p.orderDate,
+      restaurantId: p.restaurantId,
+      restaurantName: p.restaurantName.isEmpty ? 'N/A' : p.restaurantName,
+      livreurId: p.livreurId,
+      livreurName: p.livreurName,
+      customerName: p.clientName,
+      paymentMethod: p.paymentMethod,
+      phase: phase,
+      items: p.items
+          .map((l) => OrderLineItem(
+                name: l.name,
+                quantity: l.quantity,
+                unitPrice: l.unitPrice,
+                totalPrice: l.lineTotal,
+                sauces: const [],
+                extras: const [],
+              ))
+          .toList(),
+      subtotal: p.subtotal,
+      deliveryFee: p.deliveryFee,
+      loyaltyDiscount: 0,
+      promoDiscount: 0,
+      total: p.total,
+      commission: estimateCommission(p.items.map((l) => l.toMap()).toList()),
+      isPrivate: true,
     );
   }
 

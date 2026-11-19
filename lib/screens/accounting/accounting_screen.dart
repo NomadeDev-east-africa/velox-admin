@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 
 import '../../constants.dart';
 import '../../models/order_accounting.dart';
+import '../../models/private_order.dart';
 import '../../widgets/period_filter.dart';
 
 /// Comptabilité : commissions dues par chaque restaurant à NOMADE.
@@ -61,24 +62,39 @@ class _AccountingScreenState extends State<AccountingScreen> {
               .apply(_firestore.collection('orders'), 'createdAt')
               .snapshots(),
           builder: (context, ordersSnap) {
-            if (ordersSnap.hasError) {
-              return Center(child: Text('Erreur: ${ordersSnap.error}'));
-            }
-            if (!ordersSnap.hasData) {
-              return const Center(
-                  child: CircularProgressIndicator(color: primaryColor));
-            }
-            final paidIds = <String>{};
-            final payments = paySnap.data?.docs ?? [];
-            for (final d in payments) {
-              final ids = d.data()['orderIds'];
-              if (ids is List) paidIds.addAll(ids.whereType<String>());
-            }
-            final delivered = ordersSnap.data!.docs
-                .map((d) => OrderAccounting.fromMap(d.id, d.data()))
-                .where((o) => o.isDelivered)
-                .toList();
-            return _buildContent(delivered, paidIds, payments, paySnap.error);
+            // Commandes privées (WhatsApp, téléphone) de la même période,
+            // sur leur date de commande.
+            return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _period
+                  .apply(_firestore.collection('privateOrders'), 'orderDate')
+                  .snapshots(),
+              builder: (context, privSnap) {
+                if (ordersSnap.hasError) {
+                  return Center(child: Text('Erreur: ${ordersSnap.error}'));
+                }
+                if (!ordersSnap.hasData ||
+                    (!privSnap.hasData && !privSnap.hasError)) {
+                  return const Center(
+                      child: CircularProgressIndicator(color: primaryColor));
+                }
+                final paidIds = <String>{};
+                final payments = paySnap.data?.docs ?? [];
+                for (final d in payments) {
+                  final ids = d.data()['orderIds'];
+                  if (ids is List) paidIds.addAll(ids.whereType<String>());
+                }
+                final delivered = [
+                  ...ordersSnap.data!.docs
+                      .map((d) => OrderAccounting.fromMap(d.id, d.data())),
+                  ...?privSnap.data?.docs.map((d) =>
+                      OrderAccounting.fromPrivateOrder(
+                          PrivateOrder.fromMap(d.id, d.data()))),
+                ].where((o) => o.isDelivered).toList();
+                return _buildContent(
+                    delivered, paidIds, payments, paySnap.error,
+                    privateError: privSnap.error);
+              },
+            );
           },
         );
       },
@@ -89,8 +105,9 @@ class _AccountingScreenState extends State<AccountingScreen> {
     List<OrderAccounting> orders,
     Set<String> paidIds,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> payments,
-    Object? paymentsError,
-  ) {
+    Object? paymentsError, {
+    Object? privateError,
+  }) {
     final restaurants = <String, _RestaurantRow>{};
     final livreurs = <String, _LivreurRow>{};
     for (final o in orders) {
@@ -100,9 +117,15 @@ class _AccountingScreenState extends State<AccountingScreen> {
       if (!paidIds.contains(o.id)) r.unpaid.add(o);
       livreurs
           .putIfAbsent(
-              o.livreurId,
-              () => _LivreurRow(
-                  o.livreurName.isEmpty ? 'Livreur inconnu' : o.livreurName))
+              // Les privées sans livreur forment leur propre ligne.
+              o.isPrivate && o.livreurId.isEmpty
+                  ? '_privateNoLivreur'
+                  : o.livreurId,
+              () => _LivreurRow(o.livreurName.isEmpty
+                  ? (o.isPrivate
+                      ? 'Commandes privées sans livreur'
+                      : 'Livreur inconnu')
+                  : o.livreurName))
           .orders
           .add(o);
     }
@@ -113,6 +136,7 @@ class _AccountingScreenState extends State<AccountingScreen> {
       ..sort((a, b) => b.orders.length.compareTo(a.orders.length));
 
     final commissionTotal = _sum(orders, (o) => o.commission);
+    final privateCount = orders.where((o) => o.isPrivate).length;
     final commissionUnpaid =
         _sum(restaurantRows.expand((r) => r.unpaid), (o) => o.commission);
 
@@ -149,6 +173,15 @@ class _AccountingScreenState extends State<AccountingScreen> {
           ),
           const SizedBox(height: defaultPadding),
           _infoBanner(),
+          if (privateError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Commandes privées illisibles ($privateError) — elles ne '
+                'sont pas comptées ci-dessous.',
+                style: const TextStyle(color: errorColor),
+              ),
+            ),
           if (paymentsError != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
@@ -163,8 +196,13 @@ class _AccountingScreenState extends State<AccountingScreen> {
             spacing: defaultPadding,
             runSpacing: defaultPadding,
             children: [
-              _statCard(Icons.check_circle, 'Commandes livrées',
-                  '${orders.length}', successColor),
+              _statCard(
+                  Icons.check_circle,
+                  'Commandes livrées',
+                  privateCount == 0
+                      ? '${orders.length}'
+                      : '${orders.length} (dont $privateCount privée(s))',
+                  successColor),
               _statCard(Icons.storefront, 'Ventes restaurants (prix menu)',
                   _fdj(_sum(orders, (o) => o.subtotal)), infoColor),
               _statCard(Icons.trending_up, 'Commissions NOMADE (est.)',
@@ -203,7 +241,10 @@ class _AccountingScreenState extends State<AccountingScreen> {
         '(moins les points fidélité). En fin de mois, chaque restaurant doit à '
         'NOMADE la commission incluse dans ses prix.\n'
         "La commission est estimée à partir de la grille de prix (elle n'est "
-        'pas enregistrée sur les commandes).',
+        'pas enregistrée sur les commandes).\n'
+        'Les commandes privées (WhatsApp, téléphone) sont incluses dès que '
+        'leur statut est « Livrée » ; leurs prix doivent être les prix menu '
+        "de l'app pour que la commission soit juste.",
         style: TextStyle(fontSize: 12, color: textDarkColor),
       ),
     );
@@ -417,7 +458,8 @@ class _AccountingScreenState extends State<AccountingScreen> {
       final paid = !r.unpaid.contains(o);
       return '<tr${paid ? ' class="paid"' : ''}>'
           '<td>${o.createdAt != null ? f.format(o.createdAt!) : ''}</td>'
-          '<td>${esc.convert(o.customerName)}</td>'
+          '<td>${esc.convert(o.customerName)}'
+          '${o.isPrivate ? ' <i>(privée)</i>' : ''}</td>'
           '<td>$items</td>'
           '<td class="n">${_fdj(o.subtotal)}</td>'
           '<td class="n">${_fdj(o.commission)}${paid ? ' (déjà encaissé)' : ''}</td>'
@@ -462,6 +504,7 @@ Reste à encaisser : <b>${_fdj(remaining)}</b></p>
       [
         'Date',
         'Commande',
+        'Type',
         'Restaurant',
         'Livreur',
         'Client',
@@ -478,6 +521,7 @@ Reste à encaisser : <b>${_fdj(remaining)}</b></p>
       ...orders.map((o) => [
             o.createdAt != null ? f.format(o.createdAt!) : '',
             o.id,
+            o.isPrivate ? 'Privée' : 'App',
             o.restaurantName,
             o.livreurName,
             o.customerName,

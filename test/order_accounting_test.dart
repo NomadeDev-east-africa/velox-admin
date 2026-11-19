@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nomade_admin_clean/models/order_accounting.dart';
+import 'package:nomade_admin_clean/models/private_order.dart';
 import 'package:nomade_admin_clean/services/menu_parser.dart';
 
 void main() {
@@ -70,6 +71,50 @@ void main() {
         ..['status'] = 'cancelled'
         ..remove('deliveredAt');
       expect(OrderAccounting.fromMap('a', data).isDelivered, isFalse);
+    });
+  });
+
+  group('OrderAccounting.fromPrivateOrder', () {
+    PrivateOrder privee(String status) => PrivateOrder(
+          id: 'p1',
+          orderDate: DateTime(2026, 11, 19, 12),
+          clientName: 'Client WhatsApp',
+          restaurantId: 'r1',
+          restaurantName: 'Resto',
+          items: const [
+            // 1250 = prix menu (brut 1150 + marge 100) ; 650 = 600 + 50.
+            PrivateOrderLine(name: 'Burger', quantity: 2, unitPrice: 1250),
+            PrivateOrderLine(name: 'Frites', quantity: 1, unitPrice: 650),
+          ],
+          deliveryFee: 500,
+          status: status,
+        );
+
+    test("montants et commission par la même grille que l'app", () {
+      final o = OrderAccounting.fromPrivateOrder(
+          privee(PrivateOrderStatus.delivered));
+      expect(o.isPrivate, isTrue);
+      expect(o.isDelivered, isTrue);
+      expect(o.subtotal, 3150);
+      expect(o.total, 3650);
+      expect(
+          o.commission,
+          2 * MenuParser.marginIncludedIn(1250) +
+              MenuParser.marginIncludedIn(650));
+      expect(o.livreurKeeps, 500);
+      expect(o.items.length, 2);
+      expect(o.createdAt, DateTime(2026, 11, 19, 12));
+    });
+
+    test('seules les privées « Livrée » comptent', () {
+      expect(
+          OrderAccounting.fromPrivateOrder(privee(PrivateOrderStatus.pending))
+              .isDelivered,
+          isFalse);
+      expect(
+          OrderAccounting.fromPrivateOrder(privee(PrivateOrderStatus.cancelled))
+              .isDelivered,
+          isFalse);
     });
   });
 }
