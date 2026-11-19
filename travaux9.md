@@ -47,3 +47,74 @@ automatiquement (il faut choisir la période concernée).
   n'est PAS utilisé, ma modif dessus a été annulée). Bloc `restaurantCommissionPayments`
   ajouté, compilation validée par le serveur (`firebase deploy --dry-run`).
   À copier-coller dans la console Firestore > Règles.
+
+---
+
+# Session du 19/11/2026 — Carte (précision GPS), doublons catégories, commandes privées
+
+## 4. Carte : livreurs / VTC mal localisés
+Diagnostic (code des apps + données Firestore) : le problème vient surtout des apps.
+- **Immobile = invisible** : les apps n'envoient une position que si la personne a
+  bougé (livreur : 10 m, `GPS_DISTANCE_FILTER_METERS` ; chauffeur en attente : 30 m,
+  `IDLE_MIN_DISTANCE_M`). Un livreur qui attend sur place n'envoie plus rien → au bout
+  de 10 min l'admin le classe « Sans signal » et le masque.
+- **Positions imprécises** envoyées telles quelles (ex. ±115 m, `locationAccuracy`).
+- **Livreur** : `updatedAt` sert d'heure de position mais est aussi modifié par la
+  dispo et le token FCM.
+- Driver `Warsama` (drivers/1sbH…) `isOnline: true` alors que dernier signal le 26/10 ;
+  aucune tâche ne remet les comptes hors ligne. Même téléphone que le livreur SOUGUEH ALI,
+  plaque 809D98 sur 3 comptes.
+
+Fait côté admin (`lib/screens/map/maps_screen.dart`) : cercle de précision autour de
+chaque position (rouge si > 50 m) + ligne « Précision : ±X m » dans la fiche.
+
+Prompts déposés (non appliqués, à donner aux agents des apps) :
+- `Velox_Livreur\PROMPT_POSITION_CARTE_ADMIN.md`
+- `Velox_driver\PROMPT_POSITION_CARTE_ADMIN.md`
+Contenu : position au moins 1×/min même immobile ; ne pas envoyer une position
+> 50 m sauf si rien depuis 2 min ; livreur : écrire `lastHeartbeat` (heure serveur)
+uniquement avec la position.
+⚠️ Piège : les règles `onlyFields` sur `livreurs`/`drivers` refusent TOUTE la mise à
+jour si elle contient un champ non listé. D'où `lastHeartbeat` (déjà autorisé et déjà lu
+par l'admin) au lieu d'un nouveau champ. Chauffeur : aucun nouveau champ,
+`currentLocation.updatedAt` suffit.
+
+Non fait (refusé par l'utilisateur pour l'instant) : Cloud Function planifiée qui remet
+hors ligne les comptes sans position depuis 15 min.
+
+## 5. Doublons de catégories
+- Supprimés dans Firestore (`menuCategories`) : `W404B1RZYpaSBpVlPkPe`
+  (« Accompagnements », 07/09) et `ew2AgeS3SxJbQZ1dhURt` (« Sea Foods », 31/08) ;
+  les plus anciens conservés. Sans risque : les plats référencent la catégorie par son nom.
+- Prévention (`menu_management_service.dart`, `global_categories_screen.dart`) :
+  - création atomique `createGlobalCategoryIfAbsent` : id du document = `categoryKey`
+    + transaction → deux imports / admins / double clic simultanés n'en créent qu'une
+    (cause probable des doublons, la normalisation existait depuis le 17/07).
+    `createGlobalCategory` (id aléatoire) supprimé ; `ensureGlobalCategories` l'utilise.
+  - renommage vers un nom déjà pris refusé (`DuplicateCategoryException`) → l'admin
+    propose « déplacer les plats et supprimer ».
+  - bouton « + Catégorie » bloqué pendant l'enregistrement, message si le nom existe
+    sous une autre forme.
+  - bandeau orange si des doublons existent, avec bouton « Fusionner ».
+
+## 6. Commandes privées (WhatsApp, téléphone)
+Nouvelle section sidebar « Commandes privées » (page `privateOrders`).
+- Collection **`privateOrders`** (admin seul), séparée de `orders` : aucune Cloud
+  Function, notification ni statistique déclenchée.
+- Champs : `orderDate`, `source` (whatsapp/phone/other), `clientName`, `clientPhone`,
+  `deliveryAddress`, `restaurantId`, `restaurantName`, `items[] {name, quantity, unitPrice}`,
+  `deliveryFee`, `subtotal`, `total` (dénormalisés), `livreurId`, `livreurName`,
+  `paymentMethod` (cash/dmoney/waafi), `status` (pending/delivered/cancelled), `notes`,
+  `createdByEmail`, `createdAt`, `updatedAt`.
+- Fichiers : `lib/models/private_order.dart`, `lib/screens/private_orders/private_orders_screen.dart`
+  (liste par période, recherche, filtre statut, totaux hors annulées, détail, modifier,
+  supprimer, export CSV), `private_order_editor.dart` (formulaire ; plats du menu du
+  restaurant proposés avec leur prix ; total calculé). Tests : `test/private_order_test.dart`.
+- Non fait : commissions des commandes privées dans l'écran Comptabilité (question posée).
+
+## Déploiement — FAIT le 19/11/2026 (commit bbf5f78, non poussé)
+- `flutter analyze` : seuls les avertissements `dart:html` ; 47 tests OK.
+- Règles : bloc `privateOrders` ajouté au fichier unique, publié via
+  `firebase deploy --only firestore:rules` depuis une copie (firebase.json temporaire),
+  après `--dry-run` OK.
+- Admin web : `flutter build web --release` + `firebase deploy --only hosting`.
